@@ -20,3 +20,6 @@ npm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+backend/.wwebjs_auth/
+backend/node_modules/
+backend/.env
