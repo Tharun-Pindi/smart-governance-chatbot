@@ -4,6 +4,11 @@ import { Calendar, ChevronDown, Check } from 'lucide-react';
 const DatePicker = ({ onDateChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState('Last 30 Days');
+  const [showCustomFields, setShowCustomFields] = useState(false);
+  const [customRange, setCustomRange] = useState({
+    start: new Date().toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
 
   const ranges = [
     { label: 'Today', days: 0 },
@@ -11,11 +16,18 @@ const DatePicker = ({ onDateChange }) => {
     { label: 'Last 7 Days', days: 6 },
     { label: 'Last 30 Days', days: 29 },
     { label: 'This Month', days: 'month' },
+    { label: 'Custom Range', days: 'custom' },
     { label: 'All Time', days: 'all' }
   ];
 
   const handleRangeSelect = (range) => {
+    if (range.days === 'custom') {
+      setShowCustomFields(true);
+      return;
+    }
+
     setSelectedRange(range.label);
+    setShowCustomFields(false);
     setIsOpen(false);
 
     let start = new Date();
@@ -47,11 +59,29 @@ const DatePicker = ({ onDateChange }) => {
     }
   };
 
+  const handleCustomApply = () => {
+    const start = new Date(customRange.start);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(customRange.end);
+    end.setHours(23, 59, 59, 999);
+
+    setSelectedRange(`${start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`);
+    setIsOpen(false);
+    setShowCustomFields(false);
+
+    if (onDateChange) {
+      onDateChange(start, end);
+    }
+  };
+
   return (
     <div className="date-picker-container" style={{ position: 'relative' }}>
       <div 
         className={`date-picker-trigger ${isOpen ? 'active' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          setIsOpen(!isOpen);
+          if (!isOpen) setShowCustomFields(false);
+        }}
       >
         <Calendar size={18} className="text-muted" />
         <span className="date-range-text">{selectedRange}</span>
@@ -61,20 +91,58 @@ const DatePicker = ({ onDateChange }) => {
       {isOpen && (
         <>
           <div className="date-picker-overlay" onClick={() => setIsOpen(false)} />
-          <div className="date-picker-dropdown animate-fade-in">
+          <div className="date-picker-dropdown animate-fade-in" style={{ width: showCustomFields ? '280px' : '220px' }}>
             <div className="dropdown-header">Select Period</div>
-            <div className="range-options">
-              {ranges.map((range) => (
-                <div 
-                  key={range.label} 
-                  className={`range-option ${selectedRange === range.label ? 'selected' : ''}`}
-                  onClick={() => handleRangeSelect(range)}
-                >
-                  <span>{range.label}</span>
-                  {selectedRange === range.label && <Check size={14} className="text-primary" />}
+            
+            {!showCustomFields ? (
+              <div className="range-options">
+                {ranges.map((range) => (
+                  <div 
+                    key={range.label} 
+                    className={`range-option ${selectedRange === range.label ? 'selected' : ''}`}
+                    onClick={() => handleRangeSelect(range)}
+                  >
+                    <span>{range.label}</span>
+                    {selectedRange === range.label && <Check size={14} className="text-primary" />}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ padding: '1rem' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.4rem' }}>START DATE</label>
+                  <input 
+                    type="date" 
+                    value={customRange.start}
+                    onChange={(e) => setCustomRange({...customRange, start: e.target.value})}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.875rem' }}
+                  />
                 </div>
-              ))}
-            </div>
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.4rem' }}>END DATE</label>
+                  <input 
+                    type="date" 
+                    value={customRange.end}
+                    onChange={(e) => setCustomRange({...customRange, end: e.target.value})}
+                    style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.875rem' }}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setShowCustomFields(false)}
+                    style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Back
+                  </button>
+                  <button 
+                    onClick={handleCustomApply}
+                    style={{ flex: 1, padding: '0.5rem', borderRadius: '6px', border: 'none', background: 'var(--primary)', color: 'white', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Apply Range
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -132,6 +200,7 @@ const DatePicker = ({ onDateChange }) => {
           box-shadow: var(--shadow-lg);
           z-index: 1000;
           overflow: hidden;
+          transition: width 0.3s ease;
         }
 
         .dropdown-header {

@@ -205,6 +205,22 @@ try {
   console.error("Failed to initialize WhatsApp Bot:", error);
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('Stopping server...');
+  const { client } = require('./services/whatsappService');
+  if (client) {
+    try {
+      console.log('Destroying WhatsApp client...');
+      await client.destroy();
+    } catch (e) {}
+  }
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });

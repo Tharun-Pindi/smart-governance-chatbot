@@ -150,24 +150,47 @@ client.on('disconnected', async (reason) => {
 const clearSession = () => {
     try {
         if (fs.existsSync(AUTH_PATH)) {
+            // On Windows, the lockfile often prevents deletion. We try to remove it specifically first.
+            const sessionPath = path.join(AUTH_PATH, 'session-smart-gov-bot');
+            const lockfile = path.join(sessionPath, 'lockfile');
+            
+            if (fs.existsSync(lockfile)) {
+                try { fs.unlinkSync(lockfile); } catch (e) {}
+            }
+
             fs.rmSync(AUTH_PATH, { recursive: true, force: true });
             console.log('🧹 Session cleared.');
         }
     } catch (e) {
-        console.error('Failed to clear session:', e.message);
+        console.error('⚠️ Failed to clear session (likely still locked):', e.message);
     }
 };
 
 const initializeWhatsAppBot = async () => {
     if (isBotReady || isInitializing) return;
+    
+    // Pre-check for lockfile which causes the "browser already running" error
+    const lockfile = path.join(AUTH_PATH, 'session-smart-gov-bot', 'lockfile');
+    if (fs.existsSync(lockfile)) {
+        console.log('🧹 Removing stale WhatsApp lockfile...');
+        try { fs.unlinkSync(lockfile); } catch (e) {}
+    }
+
     try {
         console.log('🔄 Initializing WhatsApp Client...');
         isInitializing = true;
+        authError = null;
         await client.initialize();
     } catch (error) {
         isInitializing = false;
-        console.error("WhatsApp Bot Initialization Failed:", error.message);
+        console.error("❌ WhatsApp Bot Initialization Failed:", error.message);
         authError = error.message;
+        
+        // If it failed due to EBUSY or "already running", try one more time after a delay
+        if (error.message.includes('EBUSY') || error.message.includes('already running')) {
+            console.log('⏳ Retrying initialization in 5 seconds...');
+            setTimeout(initializeWhatsAppBot, 5000);
+        }
     }
 };
 
@@ -175,12 +198,14 @@ const resetWhatsAppBot = async () => {
     console.log('♻️ Resetting WhatsApp Bot...');
     try {
         await client.destroy();
-    } catch (e) {}
+    } catch (e) {
+        console.error('Error destroying client:', e.message);
+    }
     isBotReady = false;
     isInitializing = false;
     latestQR = null;
     clearSession();
-    setTimeout(initializeWhatsAppBot, 2000);
+    setTimeout(initializeWhatsAppBot, 3000);
 };
 
 // 💬 Main Message Logic
@@ -301,21 +326,27 @@ client.on('message', async msg => {
           media_url: base64Media
         };
         const res = await axios.post(`http://localhost:${process.env.PORT || 5001}/api/complaints`, payload);
+        const isDuplicate = res.data.ai_analysis && res.data.ai_analysis.isDuplicate;
+        
         delete userState[user];
+        
+        if (isDuplicate) {
+          const duplicateId = res.data.ai_analysis.duplicateId ? res.data.ai_analysis.duplicateId.substring(0, 8) : 'EXISTING';
+          return msg.reply(`✅ *Complaint Registered! / ఫిర్యాదు నమోదైంది!*
+---------------------------------------
+🆔 *Your ID:* SG-${res.data.complaint.id.substring(0,8)}
+🚀 *Note:* This issue was already reported. We've added your report to escalate its priority!
+గమనిక: ఈ సమస్య ఇప్పటికే నమోదైంది. మీ ఫిర్యాదు ఆధారంగా దీని ప్రాధాన్యతను పెంచాము!`);
+        }
+
         return msg.reply(messages.registered({ 
           id: res.data.complaint.id.substring(0,8), 
           category: state.category, 
           address: state.address 
         }));
       } catch (e) {
-        if (e.response && e.response.status === 409) {
-          const id = e.response.data.existing_id ? e.response.data.existing_id.substring(0, 8) : 'RECENT';
-          delete userState[user];
-          return msg.reply(messages.duplicate(id));
-        }
-        
         console.error("Submission Error:", e.message);
-        msg.reply("❌ *Failed to save complaint.*\nIf you uploaded a large photo, try sending 'skip' to report without the photo, or try a smaller image.");
+        msg.reply("❌ *Failed to save complaint.*\nIf you uploaded a large photo, try sending 'skip' to report without the photo.");
       }
     }
   } catch (err) {
@@ -340,4 +371,4 @@ const sendWhatsAppMessage = async (toId, text) => {
     }
 };
 
-module.exports = { initializeWhatsAppBot, resetWhatsAppBot, sendWhatsAppMessage, getWhatsAppStatus };
+module.exports = { client, initializeWhatsAppBot, resetWhatsAppBot, sendWhatsAppMessage, getWhatsAppStatus };

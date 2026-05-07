@@ -43,13 +43,19 @@ router.post('/', async (req, res) => {
     // 2. Use AI to classify the complaint and check for duplicates in a single pass
     const aiResult = await analyzeAndCheckDuplicate({ description, address }, recentIssues || []);
 
-    if (aiResult.isDuplicate) {
-      console.log(`🚫 [BLOCK] Duplicate detected by AI. Matching ID: ${aiResult.duplicateId}`);
-      return res.status(409).json({ 
-        error: 'Duplicate Detected', 
-        message: aiResult.reasoning || 'This issue has already been reported recently.',
-        existing_id: aiResult.duplicateId
-      });
+    if (aiResult.isDuplicate && aiResult.duplicateId) {
+      console.log(`📢 [DUPLICATE] Issue already reported (ID: ${aiResult.duplicateId}). Escalating priority.`);
+      try {
+        // Automatically boost priority of the existing issue because multiple people are reporting it
+        await supabase
+          .from('complaints')
+          .update({ priority: 'Urgent' }) // If multiple people report, it becomes Urgent
+          .eq('id', aiResult.duplicateId);
+      } catch (e) {
+        console.error('Failed to escalate duplicate priority:', e.message);
+      }
+      // We DO NOT return here anymore; we let the new complaint be created as well
+      // so the user gets their own tracking ID and feels heard.
     }
 
 
@@ -183,6 +189,23 @@ router.get('/:id', async (req, res) => {
 router.put('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
+
+    // First check if the complaint is already resolved
+    const { data: currentComplaint, error: fetchError } = await supabase
+      .from('complaints')
+      .select('status')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    if (currentComplaint && (currentComplaint.status === 'Resolved' || currentComplaint.status === 'Solved')) {
+      return res.status(400).json({ 
+        error: 'Final State Enforced', 
+        message: 'This complaint is already resolved and its status cannot be modified further.' 
+      });
+    }
+
     const { data, error } = await supabase
       .from('complaints')
       .update({ status })

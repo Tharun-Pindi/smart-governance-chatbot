@@ -69,22 +69,41 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
             </div>
             
             <div className="flex gap-2">
-              <select 
-                value={status} 
-                onChange={(e) => onUpdateStatus(complaint.id, e.target.value)}
-                style={{
-                  padding: '0.5rem 1rem',
+              {status === 'Resolved' ? (
+                <div style={{
+                  padding: '0.5rem 1.5rem',
                   borderRadius: '0.5rem',
-                  border: '1px solid var(--border-color)',
+                  background: '#d1fae5',
+                  color: '#065f46',
                   fontSize: '0.875rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                <option value="Pending">Mark Pending</option>
-                <option value="In Progress">Set In Progress</option>
-                <option value="Resolved">Mark Resolved</option>
-              </select>
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  border: '1px solid #10b981'
+                }}>
+                  <CheckCircle size={16} />
+                  Problem Resolved
+                </div>
+              ) : (
+                <select 
+                  value={status} 
+                  onChange={(e) => onUpdateStatus(complaint.id, e.target.value)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '0.5rem',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="Pending">Mark Pending</option>
+                  <option value="In Progress">Set In Progress</option>
+                  <option value="Resolved">Mark Resolved</option>
+                </select>
+              )}
             </div>
           </div>
 
