@@ -158,12 +158,7 @@ const analyzeAndCheckDuplicate = async (complaintData, recentIssues) => {
       4. Assign to a logical Government Department from this list: "Water Department", "Electricity Board", "Roads & Buildings (R&B)", "Municipal Corporation (GHMC/GVMC)", "Public Health Dept", "Police Department", or "Other".
       5. Generate a professional English summary.
       6. Extract key tags (e.g., #waterleak, #pothole, #powercut).
-      7. Analyze if this complaint is a duplicate of any of the recent complaints below.
-         Consider complaints as duplicates if they are reporting the exact same issue at the same general location (if discernible) or referring to the exact same real-world problem.
 
-      Recent Complaints:
-      ${complaintsList}
-      
       New Complaint to Analyze: 
       "Description: ${complaintData.description}"
       "Location: ${complaintData.address || 'Unknown'}"
@@ -177,10 +172,7 @@ const analyzeAndCheckDuplicate = async (complaintData, recentIssues) => {
         "ward": "Ward Number (e.g. Ward 12) or null if unknown",
         "summary": "1-sentence detailed English summary",
         "tags": ["tag1", "tag2"],
-        "language_detected": "English/Telugu/Other",
-        "isDuplicate": true or false,
-        "duplicateId": "ID of the matching complaint if true, else null",
-        "reasoning": "A short explanation of why it is or isn't a duplicate"
+        "language_detected": "English/Telugu/Other"
       }
     `;
 
@@ -226,13 +218,9 @@ const analyzeAndCheckDuplicate = async (complaintData, recentIssues) => {
       department: "Other", 
       summary: "Processed manually due to AI timeout.",
       tags: ["manual-review"],
-      language_detected: "Unknown",
-      isDuplicate: false,
-      duplicateId: null,
-      reasoning: "AI analysis failed"
+      language_detected: "Unknown"
     };
   }
 };
 
 module.exports = { classifyComplaint, checkDuplicateWithAI, analyzeAndCheckDuplicate };
-

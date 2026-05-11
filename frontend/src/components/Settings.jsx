@@ -16,7 +16,9 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-const Settings = ({ userProfile, setUserProfile }) => {
+import axios from 'axios';
+
+const Settings = ({ userProfile, setUserProfile, phoneNumber, userRole }) => {
   const [activeTab, setActiveTab] = useState('profile');
   const [localProfile, setLocalProfile] = useState(userProfile);
   const [performanceData, setPerformanceData] = useState(Array(20).fill(30));
@@ -30,10 +32,30 @@ const Settings = ({ userProfile, setUserProfile }) => {
     }
   }, [userProfile]);
 
-  const handleProfileSave = () => {
+  const handleProfileSave = async () => {
     if (localProfile) {
-      setUserProfile(localProfile);
-      showToast("Profile Updated Globally!");
+      try {
+        console.log("Attempting to save profile for:", phoneNumber);
+        // Update database
+        const res = await axios.post('/api/auth/update-profile', {
+          phone: phoneNumber,
+          name: localProfile.name,
+          photo: localProfile.photo
+        }, {
+          baseURL: 'http://localhost:5001' // Explicitly set the base URL
+        });
+        
+        const updatedProfile = { ...localProfile };
+        if (res.data.photo_url) {
+          updatedProfile.photo = res.data.photo_url;
+        }
+        
+        setUserProfile(updatedProfile);
+        showToast("Profile Updated Locally & Globally!");
+      } catch (err) {
+        console.error("Profile Save Error:", err.response?.data || err.message);
+        showToast("Failed to sync with database", 'error');
+      }
     }
   };
 
@@ -243,21 +265,26 @@ const Settings = ({ userProfile, setUserProfile }) => {
                     />
                   </div>
                   <div className="input-group">
-                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>Email Address</label>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>Role</label>
                     <input 
-                      type="email" 
-                      name="email"
-                      value={localProfile?.email || ''} 
-                      onChange={handleInputChange}
-                      style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }} 
+                      type="text" 
+                      value={userRole?.replace('_', ' ').toUpperCase() || 'ADMIN'} 
+                      disabled
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }} 
+                    />
+                  </div>
+                  <div className="input-group">
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>Phone Number</label>
+                    <input 
+                      type="text" 
+                      value={phoneNumber || ''} 
+                      disabled
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none', background: '#f1f5f9', color: '#64748b', cursor: 'not-allowed' }} 
                     />
                   </div>
                 </div>
 
-                <div style={{ marginTop: '1.5rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.5rem' }}>New Password</label>
-                  <input type="password" placeholder="••••••••" style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--border-color)', outline: 'none' }} />
-                </div>
+                {/* Password field removed as authentication is via OTP */}
 
                 <button 
                   className="btn-premium" 

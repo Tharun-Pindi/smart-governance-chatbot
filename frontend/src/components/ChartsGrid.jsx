@@ -5,7 +5,7 @@ import {
   BarChart, Bar
 } from 'recharts';
 
-const ChartsGrid = ({ complaints }) => {
+const ChartsGrid = ({ complaints, userRole, wardNumber }) => {
   // Real data for trend (Last 6 months)
   const last6Months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date();
@@ -116,20 +116,51 @@ const ChartsGrid = ({ complaints }) => {
         </div>
       </div>
 
-      {/* Department Chart */}
-      <div className="card">
-        <h3 className="mb-6" style={{ fontSize: '1rem', fontWeight: 700 }}>Complaints by Department (Top 5)</h3>
-        <div style={{ height: 250 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart layout="vertical" data={wardData}>
-              <XAxis type="number" hide />
-              <YAxis dataKey="name" type="category" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
+      {/* Department Chart or Ward Summary */}
+      {userRole === 'ward_admin' ? (
+        <div className="card">
+          <h3 className="mb-6" style={{ fontSize: '1rem', fontWeight: 700 }}>Ward Summary</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: 250, justifyContent: 'center' }}>
+            <div className="flex justify-between items-center" style={{ fontSize: '0.875rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Ward</span>
+              <span style={{ fontWeight: 600 }}>{wardNumber}</span>
+            </div>
+            <div className="flex justify-between items-center" style={{ fontSize: '0.875rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Total Area</span>
+              <span style={{ fontWeight: 600 }}>2.35 km²</span>
+            </div>
+            <div className="flex justify-between items-center" style={{ fontSize: '0.875rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Population</span>
+              <span style={{ fontWeight: 600 }}>18,650</span>
+            </div>
+            <div className="flex justify-between items-center" style={{ fontSize: '0.875rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Total Complaints</span>
+              <span style={{ fontWeight: 600 }}>{complaints.length}</span>
+            </div>
+            <div className="flex justify-between items-center" style={{ fontSize: '0.875rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>This Month Growth</span>
+              <span style={{ fontWeight: 600, color: 'var(--success)' }}>+11.1%</span>
+            </div>
+            <button style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 600, fontSize: '0.875rem', textAlign: 'left', marginTop: 'auto', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+              View Ward Profile <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="card">
+          <h3 className="mb-6" style={{ fontSize: '1rem', fontWeight: 700 }}>Complaints by Department (Top 5)</h3>
+          <div style={{ height: 250 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart layout="vertical" data={wardData}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="name" type="category" fontSize={10} axisLine={false} tickLine={false} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

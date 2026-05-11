@@ -12,11 +12,13 @@ import {
   Settings, 
   HelpCircle,
   ChevronRight,
-  Landmark
+  Landmark,
+  LogOut,
+  Megaphone
 } from 'lucide-react';
 
-const Sidebar = ({ activeTab, setActiveTab }) => {
-  const menuItems = [
+const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber = '5' }) => {
+  const superAdminMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'complaints', label: 'Complaints', icon: MessageSquare, hasSub: true },
     { id: 'categories', label: 'Categories', icon: Grid },
@@ -30,23 +32,43 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
     { id: 'feedback', label: 'Feedback', icon: HelpCircle },
   ];
 
-  return (
-    <aside className="sidebar">
-      <div className="sidebar-logo">
-        <div className="avatar" style={{ background: 'white', color: 'var(--sidebar-bg)' }}>
-          <Landmark size={24} />
-        </div>
-        <div>
-          <h1>Smart Governance</h1>
-          <p>Admin Dashboard</p>
-        </div>
-      </div>
+  const wardAdminMenuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'complaints', label: 'Complaints', icon: MessageSquare, hasSub: true },
+    { id: 'categories', label: 'Categories', icon: Grid },
+    { id: 'heatmap', label: 'Heatmap', icon: MapIcon },
+    { id: 'mapview', label: 'Map View', icon: MapPin },
+    { id: 'wards', label: 'Wards', icon: Layers },
+    { id: 'users', label: 'Users', icon: Users },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
+    { id: 'alerts', label: 'Alerts', icon: Bell },
+    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'feedback', label: 'Feedback', icon: HelpCircle },
+  ];
 
-      <nav className="sidebar-nav">
+  const menuItems = userRole === 'ward_admin' ? wardAdminMenuItems : superAdminMenuItems;
+
+  return (
+    <aside className="sidebar" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div>
+        <div className="sidebar-logo">
+          <div className="avatar" style={{ background: 'white', color: 'var(--sidebar-bg)' }}>
+            <Landmark size={24} />
+          </div>
+          <div>
+            <h1>Smart Governance</h1>
+            <p>{userRole === 'ward_admin' ? 'Ward Admin Dashboard' : 'Super Admin Dashboard'}</p>
+          </div>
+        </div>
+
+
+
+        <nav className="sidebar-nav" style={{ flex: 'none' }}>
         {menuItems.map((item) => (
           <div 
             key={item.id}
-            className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
+            className={`nav-item ${activeTab === item.id && item.id !== 'feedback' ? 'active' : ''}`}
+            style={item.id === 'feedback' ? { background: '#3b82f6', color: 'white', marginTop: '1rem' } : {}}
             onClick={() => setActiveTab(item.id)}
           >
             <item.icon size={20} />
@@ -55,15 +77,25 @@ const Sidebar = ({ activeTab, setActiveTab }) => {
           </div>
         ))}
       </nav>
+      </div>
 
-      <div className="sidebar-footer">
-        <div className="user-profile-small">
-          <div className="avatar">AD</div>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>Admin User</p>
-            <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Administrator</p>
-          </div>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }}></div>
+      <div className="sidebar-footer" style={{ padding: '1rem' }}>
+        <div 
+          className="nav-item" 
+          style={{ marginBottom: '1rem', color: '#cbd5e1' }}
+          onClick={() => {
+            if(window.confirm('Are you sure you want to logout?')) {
+              window.location.reload();
+            }
+          }}
+        >
+          <LogOut size={20} />
+          <span style={{ flex: 1 }}>Logout</span>
+        </div>
+
+        <div style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <button style={{ flex: 1, padding: '8px', background: 'var(--primary)', color: 'white', border: 'none', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>English</button>
+          <button style={{ flex: 1, padding: '8px', background: 'transparent', color: '#94a3b8', border: 'none', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>తెలుగు</button>
         </div>
       </div>
     </aside>

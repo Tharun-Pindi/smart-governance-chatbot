@@ -9,13 +9,14 @@ import RecentComplaintsTable from './components/RecentComplaintsTable';
 import ErrorBoundary from './components/ErrorBoundary';
 import { 
   Eye, Edit2, Search, Filter, ArrowLeft, X,
-  LayoutDashboard, MessageSquare, Grid, Map as MapIcon, MapPin, Layers, Users, BarChart3, Bell, Settings as SettingsIcon, HelpCircle, CheckCircle2, Calendar 
+  LayoutDashboard, MessageSquare, Grid, Map as MapIcon, MapPin, Layers, Users, BarChart3, Bell, Settings as SettingsIcon, HelpCircle, CheckCircle2, Calendar, Download 
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:5001/api';
 
 import ComplaintModal from './components/ComplaintModal';
 import Settings from './components/Settings';
+import WardDashboard from './components/WardDashboard';
 
 
 const menuItems = [
@@ -37,14 +38,22 @@ const App = () => {
   const [complaints, setComplaints] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [userRole, setUserRole] = useState('official');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState('super_admin');
+  const [wardNumber, setWardNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [adminName, setAdminName] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [fullscreenImage, setFullscreenImage] = useState(null);
   const [userProfile, setUserProfile] = useState({
-    name: 'Tharun Pindi',
-    email: 'admin@smartgov.in',
-    avatar: 'AD'
+    name: 'Admin User',
+    email: '',
+    avatar: 'A'
   });
   const [dateRange, setDateRange] = useState({ 
     start: new Date(new Date().setDate(new Date().getDate() - 30)), 
@@ -93,13 +102,34 @@ const App = () => {
     const complaintDate = new Date(c.created_at);
     if (isNaN(complaintDate.getTime())) return false; // Skip invalid dates
     
-    const inRange = complaintDate >= dateRange.start && complaintDate <= dateRange.end;
+    // Ward Admin Data Isolation (or Super Admin Ward Selection)
+    let matchesWard = true;
+    if (userRole === 'ward_admin' || (userRole === 'super_admin' && wardNumber)) {
+      // Use the direct ward field if available, fallback to regex search in address
+      const complaintWard = c.ward ? String(c.ward).replace(/\D/g, '') : null;
+      const targetWard = wardNumber ? String(wardNumber).replace(/\D/g, '') : null;
+      
+      if (complaintWard !== targetWard) {
+        // Only if direct field fails, try searching the address as a fallback
+        const addressMatch = c.address?.match(/Ward\s*(\d+)/i);
+        const addressWard = addressMatch ? addressMatch[1] : null;
+        if (addressWard !== targetWard) {
+          matchesWard = false;
+        }
+      }
+    }
+    
+    // Fix date boundary issues for real-time updates
+    const endDate = new Date(dateRange.end);
+    endDate.setHours(23, 59, 59, 999);
+    
+    const inRange = complaintDate >= dateRange.start && complaintDate <= endDate;
     const matchesSearch = !searchQuery || 
       String(c.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(c.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(c.address || '').toLowerCase().includes(searchQuery.toLowerCase());
     
-    return inRange && matchesSearch;
+    return matchesWard && inRange && matchesSearch;
   });
 
   const stats = {
@@ -110,13 +140,201 @@ const App = () => {
     overdue: filteredComplaints.filter(c => c.priority === 'Urgent' && c.status !== 'Resolved').length
   };
 
+  const handleSendOtp = async () => {
+    if (!adminName || !phoneNumber) return alert('Please enter your name and phone number');
+    setLoginLoading(true);
+    try {
+      const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
+      await axios.post(`${API_BASE_URL}/auth/send-otp`, { phone: fullPhone, name: adminName });
+      setOtpSent(true);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to send OTP');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp) return alert('Please enter OTP');
+    setLoginLoading(true);
+    try {
+      const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
+      const res = await axios.post(`${API_BASE_URL}/auth/verify-otp`, { phone: fullPhone, otp });
+      if (res.data.success) {
+        const { user } = res.data;
+        setUserProfile({
+          name: user.name,
+          email: `${user.role}@smartgov.in`,
+          avatar: user.name.substring(0, 2).toUpperCase(),
+          photo: user.photo_url
+        });
+        setUserRole(user.role);
+        setWardNumber(user.wardNumber || '');
+        setPhoneNumber(fullPhone); // Ensure the full verified number is stored
+        setIsAuthenticated(true);
+      }
+    } catch (err) {
+      alert(err.response?.data?.error || 'Invalid OTP');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleExportData = () => {
+    if (filteredComplaints.length === 0) return alert('No data to export');
+    
+    // Define CSV headers
+    const headers = ['ID', 'Date', 'Citizen Name', 'Phone/ID', 'Category', 'Ward', 'Address', 'Status', 'Priority', 'Department', 'Description'];
+    
+    // Map data to rows
+    const rows = filteredComplaints.map(c => {
+      const match = c.address?.match(/Ward\s*(\d+)/i) || c.description?.match(/Ward\s*(\d+)/i);
+      const wardStr = c.ward || (match ? `Ward ${match[1]}` : 'General');
+      
+      return [
+        `SG-${String(c.id || '').substring(0, 8).toUpperCase()}`,
+        new Date(c.created_at).toLocaleString().replace(',', ''),
+        c.citizen_name || 'N/A',
+        c.citizen_id || 'Anonymous',
+        c.category || 'General',
+        wardStr,
+        `"${(c.address || c.location || 'N/A').replace(/"/g, '""')}"`,
+        c.status || 'Pending',
+        c.priority || 'Medium',
+        c.department || 'N/A',
+        `"${(c.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`
+      ];
+    });
+    
+    // Combine into CSV string with Metadata Header
+    const csvContent = [
+      `"Smart Governance System - Administrative Export"`,
+      `"Generated On: ${new Date().toLocaleString()}"`,
+      `"Total Records: ${filteredComplaints.length}"`,
+      `""`, // Spacing line
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    // Create download link with full timestamp in filename
+    const timestamp = new Date().toLocaleString().replace(/[/, :]/g, '-').replace('--', '_');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `SmartGov_FullReport_${timestamp}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   if (isLoading) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 40, height: 40, border: '4px solid #e2e8f0', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto mb-4' }}></div>
-          <p style={{ color: '#64748b', fontWeight: 600 }}>Loading Smart Governance Dashboard...</p>
+          <p style={{ color: '#64748b', fontWeight: 600 }}>Loading Smart Governance System...</p>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a' }}>
+        <div className="card" style={{ width: '100%', maxWidth: '400px', padding: '2.5rem', textAlign: 'center', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+          <div style={{ background: 'var(--primary)', width: 64, height: 64, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem', color: 'white', boxShadow: '0 0 20px rgba(59, 130, 246, 0.5)' }}>
+            <Layers size={32} />
+          </div>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem', color: 'var(--text-main)' }}>Smart Governance</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>Secure Admin Authentication</p>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', textAlign: 'left' }}>
+            {!otpSent ? (
+              <>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Full Name</label>
+                  <input 
+                    type="text"
+                    placeholder="Enter your name"
+                    value={adminName}
+                    onChange={(e) => setAdminName(e.target.value)}
+                    style={{ width: '100%', padding: '0.875rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)', outline: 'none', fontSize: '1rem', marginBottom: '1rem' }}
+                  />
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Phone Number</label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <select 
+                      value={countryCode}
+                      onChange={(e) => setCountryCode(e.target.value)}
+                      style={{ 
+                        width: '80px', 
+                        padding: '0.875rem 0.5rem', 
+                        borderRadius: '0.75rem', 
+                        border: '1px solid var(--border-color)', 
+                        background: 'white',
+                        fontSize: '0.9rem',
+                        fontWeight: 600,
+                        outline: 'none'
+                      }}
+                    >
+                      <option value="+91">+91 (IN)</option>
+                      <option value="+1">+1 (US)</option>
+                      <option value="+44">+44 (UK)</option>
+                      <option value="+971">+971 (UAE)</option>
+                    </select>
+                    <input 
+                      type="tel"
+                      placeholder="98765 43210"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      style={{ flex: 1, padding: '0.875rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)', outline: 'none', fontSize: '1rem' }}
+                    />
+                  </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Enter your details to receive an OTP.</p>
+                </div>
+                <button 
+                  className="btn-premium" 
+                  style={{ width: '100%', padding: '1rem', borderRadius: '0.75rem', marginTop: '0.5rem' }}
+                  onClick={handleSendOtp}
+                  disabled={loginLoading}
+                >
+                  {loginLoading ? 'Sending...' : 'Send OTP'}
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Enter 6-Digit OTP</label>
+                  <input 
+                    type="text"
+                    maxLength={6}
+                    placeholder="123456"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    style={{ width: '100%', padding: '0.875rem', borderRadius: '0.75rem', border: '1px solid var(--border-color)', outline: 'none', fontSize: '1.25rem', textAlign: 'center', letterSpacing: '0.5rem', fontWeight: 700 }}
+                  />
+                </div>
+                <button 
+                  className="btn-premium" 
+                  style={{ width: '100%', padding: '1rem', borderRadius: '0.75rem', marginTop: '0.5rem' }}
+                  onClick={handleVerifyOtp}
+                  disabled={loginLoading}
+                >
+                  {loginLoading ? 'Verifying...' : 'Verify & Login'}
+                </button>
+                <button 
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '0.875rem', cursor: 'pointer', marginTop: '0.5rem' }}
+                  onClick={() => setOtpSent(false)}
+                >
+                  &larr; Use a different number
+                </button>
+              </>
+            )}
+
+
+          </div>
         </div>
       </div>
     );
@@ -124,14 +342,16 @@ const App = () => {
 
   return (
     <div className="dashboard-layout">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole={userRole} wardNumber={wardNumber} />
       
       <main className="main-content">
         <TopHeader 
-          userRole={userRole} 
+          userRole={userRole}
+          wardNumber={wardNumber}
+          setWardNumber={setWardNumber}
           userProfile={userProfile}
           onDateChange={handleDateChange} 
-          notificationCount={complaints.filter(c => c.status === 'Pending').length}
+          notificationCount={filteredComplaints.filter(c => c.status === 'Pending').length}
           onNotificationClick={() => setActiveTab('alerts')}
           onProfileClick={() => setActiveTab('settings')}
           onSettingsClick={() => setActiveTab('settings')}
@@ -143,25 +363,38 @@ const App = () => {
         />
         
         {activeTab === 'dashboard' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <ErrorBoundary>
-              <StatsCards stats={stats} />
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <ChartsGrid complaints={filteredComplaints} />
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} />
-            </ErrorBoundary>
-            <ErrorBoundary>
-              <RecentComplaintsTable 
-                complaints={filteredComplaints} 
-                onSelectComplaint={setSelectedComplaint} 
-                onViewAll={() => setActiveTab('complaints')}
-                onViewImage={setFullscreenImage}
-              />
-            </ErrorBoundary>
-          </div>
+          userRole === 'ward_admin' ? (
+            <WardDashboard 
+              complaints={filteredComplaints} 
+              stats={stats} 
+              wardNumber={wardNumber} 
+              onSelectComplaint={setSelectedComplaint}
+              onViewAll={() => setActiveTab('complaints')}
+              onViewImage={setFullscreenImage}
+            />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <ErrorBoundary>
+                <StatsCards stats={stats} />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <ChartsGrid complaints={filteredComplaints} userRole={userRole} wardNumber={wardNumber} />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} userRole={userRole} wardNumber={wardNumber} view="both" />
+              </ErrorBoundary>
+              <ErrorBoundary>
+                <RecentComplaintsTable 
+                  complaints={filteredComplaints} 
+                  onSelectComplaint={setSelectedComplaint} 
+                  onViewAll={() => setActiveTab('complaints')}
+                  onViewImage={setFullscreenImage}
+                  userRole={userRole}
+                  wardNumber={wardNumber}
+                />
+              </ErrorBoundary>
+            </div>
+          )
         )}
 
         {activeTab === 'complaints' && (
@@ -206,6 +439,7 @@ const App = () => {
                       <th>Location</th>
                       <th>Ward</th>
                       <th>Status</th>
+                      <th>Citizen Name</th>
                       <th>Reported By</th>
                       <th>Date</th>
                       <th>Action</th>
@@ -259,6 +493,7 @@ const App = () => {
                                   {safeStatus}
                                 </span>
                               </td>
+                              <td style={{ fontWeight: 600 }}>{c?.citizen_name || 'N/A'}</td>
                               <td>{c?.citizen_id || 'Anonymous'}</td>
                               <td>{c?.created_at ? new Date(c.created_at).toLocaleDateString() : 'N/A'}</td>
                               <td>
@@ -379,7 +614,7 @@ const App = () => {
                   </div>
                </div>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="live" />
+            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="live" userRole={userRole} wardNumber={wardNumber} />
           </div>
         )}
 
@@ -392,7 +627,7 @@ const App = () => {
                <h2 style={{ fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Location Density Heatmap</h2>
                <p style={{ color: 'var(--text-muted)', maxWidth: '600px', margin: '0.5rem auto 0' }}>Analyzing clustering of reports in real-time to identify high-priority intervention zones.</p>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="heatmap" />
+            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="heatmap" userRole={userRole} wardNumber={wardNumber} />
           </div>
         )}
 
@@ -426,10 +661,31 @@ const App = () => {
 
         {activeTab === 'reports' && (
           <div className="animate-fade-in" style={{ padding: '1rem' }}>
-            <ChartsGrid complaints={filteredComplaints} />
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Analytics & Reports</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Detailed breakdown of system performance and complaint trends</p>
+              </div>
+              <button 
+                className="btn-premium" 
+                onClick={handleExportData}
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem',
+                  padding: '0.75rem 1.5rem',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)'
+                }}
+              >
+                <Download size={18} />
+                Export Data (CSV)
+              </button>
+            </div>
+
+            <ChartsGrid complaints={filteredComplaints} userRole={userRole} wardNumber={wardNumber} />
             <div className="card mt-6">
-              <h3 className="mb-4">Weekly Performance Summary</h3>
-              <p>System resolved {stats.resolved} out of {stats.total} total reports this period.</p>
+              <h3 className="mb-4" style={{ fontWeight: 700 }}>Weekly Performance Summary</h3>
+              <p style={{ color: 'var(--text-main)', fontSize: '0.95rem' }}>System resolved <strong>{stats.resolved}</strong> out of <strong>{stats.total}</strong> total reports in the selected period.</p>
             </div>
           </div>
         )}
@@ -475,12 +731,12 @@ const App = () => {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Active System Alerts</h2>
-                <p style={{ color: 'var(--text-muted)' }}>Found {complaints.filter(c => c.status === 'Pending').length} reports requiring immediate administrative action.</p>
+                <p style={{ color: 'var(--text-muted)' }}>Found {filteredComplaints.filter(c => c.status === 'Pending').length} reports requiring immediate administrative action.</p>
               </div>
             </div>
             
             <div className="grid grid-1" style={{ gap: '1rem' }}>
-              {complaints.filter(c => c.status === 'Pending').map(alert => (
+              {filteredComplaints.filter(c => c.status === 'Pending').map(alert => (
                 <div key={alert.id} className="card flex items-center gap-4" style={{ 
                   borderLeft: `4px solid ${alert.priority === 'Urgent' ? '#ef4444' : '#f59e0b'}`, 
                   padding: '1.25rem',
@@ -547,6 +803,8 @@ const App = () => {
           <Settings 
             userProfile={userProfile} 
             setUserProfile={setUserProfile} 
+            phoneNumber={phoneNumber}
+            userRole={userRole}
           />
         )}
 

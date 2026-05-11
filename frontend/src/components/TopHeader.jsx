@@ -2,7 +2,7 @@ import React from 'react';
 import { Bell, ChevronDown, User, Settings, LogOut } from 'lucide-react';
 import DatePicker from './DatePicker';
 
-const TopHeader = ({ userRole, userProfile, onDateChange, notificationCount, onNotificationClick, onProfileClick, onSettingsClick, onLogoutClick }) => {
+const TopHeader = ({ userRole = 'super_admin', wardNumber = '5', setWardNumber, userProfile, onDateChange, notificationCount, onNotificationClick, onProfileClick, onSettingsClick, onLogoutClick }) => {
   console.log("Header Notification Count:", notificationCount);
   const [isProfileOpen, setIsProfileOpen] = React.useState(false);
 
@@ -14,11 +14,47 @@ const TopHeader = ({ userRole, userProfile, onDateChange, notificationCount, onN
   return (
     <header className="top-header animate-fade-in">
       <div className="header-left">
-        <h2>Welcome back, {userRole === 'citizen' ? 'Tharun' : 'Admin'}! 👋</h2>
-        <p>Here's what's happening in your area today.</p>
+        {userRole === 'ward_admin' ? (
+          <>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+               Ward {wardNumber} Admin Dashboard
+            </h2>
+            <p>Welcome back! Here's what's happening in your ward.</p>
+          </>
+        ) : (
+          <>
+            <h2>{wardNumber ? `🔍 Viewing Ward ${wardNumber} Overview` : `Welcome back, ${userProfile?.name || 'Admin'}! 👋`}</h2>
+            <p>{wardNumber ? `You are currently monitoring data specifically for Ward ${wardNumber}.` : "Here's what's happening in your area today."}</p>
+          </>
+        )}
       </div>
       
       <div className="header-right">
+        {userRole === 'super_admin' && (
+          <div className="ward-selector-wrap" style={{ marginRight: '0.5rem' }}>
+            <select 
+              value={wardNumber || ''} 
+              onChange={(e) => setWardNumber(e.target.value)}
+              style={{ 
+                padding: '0.625rem 1rem', 
+                borderRadius: '0.75rem', 
+                border: '1px solid var(--border-color)', 
+                outline: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                background: 'white',
+                cursor: 'pointer',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              <option value="">🌍 All Wards</option>
+              {[...Array(10)].map((_, i) => (
+                <option key={i+1} value={String(i+1)}>📍 Ward {i+1}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <DatePicker onDateChange={onDateChange} />
         
         <div 
@@ -67,8 +103,15 @@ const TopHeader = ({ userRole, userProfile, onDateChange, notificationCount, onN
               {!userProfile?.photo && (userProfile?.avatar || 'AD')}
             </div>
             <div className="flex items-center gap-1">
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{userProfile?.name || 'Admin'}</span>
-              <ChevronDown size={14} style={{ transform: isProfileOpen ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginRight: '4px' }}>
+                <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2 }}>
+                  {userRole === 'ward_admin' ? 'Rajesh Kumar' : (userProfile?.name || 'Admin')}
+                </span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                  {userRole === 'ward_admin' ? `Ward ${wardNumber} Admin` : 'Super Admin'}
+                </span>
+              </div>
+              <ChevronDown size={14} style={{ transform: isProfileOpen ? 'rotate(180deg)' : 'none', transition: '0.2s', color: 'var(--text-muted)' }} />
             </div>
           </div>
 

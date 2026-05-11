@@ -8,7 +8,7 @@ const { uploadBase64 } = require('../services/cloudinaryService');
 // Create a new complaint
 router.post('/', async (req, res) => {
   try {
-    const { title, description, citizen_id, location, address, is_emergency, media_url, status } = req.body;
+    const { title, description, citizen_id, citizen_name, ward, location, address, is_emergency, media_url, status, category } = req.body;
 
     if (!description) {
       return res.status(400).json({ error: 'Description is required' });
@@ -40,45 +40,81 @@ router.post('/', async (req, res) => {
       .select('id, title, description, category, address')
       .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-    // 2. Use AI to classify the complaint and check for duplicates in a single pass
-    const aiResult = await analyzeAndCheckDuplicate({ description, address }, recentIssues || []);
+    // 2. Use AI to classify the complaint
+    // We removed the duplicate check to allow citizens to report the same issue multiple times
+    const aiResult = await analyzeAndCheckDuplicate({ description, address }, []);
 
-    if (aiResult.isDuplicate && aiResult.duplicateId) {
-      console.log(`📢 [DUPLICATE] Issue already reported (ID: ${aiResult.duplicateId}). Escalating priority.`);
-      try {
-        // Automatically boost priority of the existing issue because multiple people are reporting it
-        await supabase
-          .from('complaints')
-          .update({ priority: 'Urgent' }) // If multiple people report, it becomes Urgent
-          .eq('id', aiResult.duplicateId);
-      } catch (e) {
-        console.error('Failed to escalate duplicate priority:', e.message);
-      }
-      // We DO NOT return here anymore; we let the new complaint be created as well
-      // so the user gets their own tracking ID and feels heard.
+
+    // 3. Save to Supabase (Robust Insert)
+    let insertPayload = {
+      title: title || aiResult.title || (description.split(' ').slice(0, 3).join(' ') + (description.split(' ').length > 3 ? '...' : '')),
+      description,
+      category: category || aiResult.category,
+      priority: is_emergency ? 'High' : aiResult.priority,
+      department: aiResult.department,
+      status: status || 'Pending',
+      citizen_id: citizen_id || 'anonymous',
+      location: location || null,
+      address: address || null,
+      ward: ward || aiResult.ward || null,
+      is_emergency: is_emergency || false,
+      media_url: finalMediaUrl || null
+    };
+
+    // Add citizen_name only if provided
+    if (citizen_name) {
+      insertPayload.citizen_name = citizen_name;
     }
 
-
-    // 3. Save to Supabase
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('complaints')
-      .insert([
-        {
-          title: title || aiResult.title || (description.split(' ').slice(0, 3).join(' ') + (description.split(' ').length > 3 ? '...' : '')),
-          description,
-          category: aiResult.category,
-          priority: is_emergency ? 'High' : aiResult.priority,
-          department: aiResult.department,
-          status: status || 'Pending',
-          citizen_id: citizen_id || 'anonymous',
-          location: location || null,
-          address: address || null,
-          ward: aiResult.ward || null,
-          is_emergency: is_emergency || false,
-          media_url: finalMediaUrl || null
-        }
-      ])
+      .insert([insertPayload])
       .select();
+
+    if (error) {
+      console.warn('⚠️ [DB] Insert failed:', error.message);
+      
+      // Automatic Fallback: Identify missing column from various error formats
+      const pgRegex = /column "(.+)" does not exist/;
+      const restRegex = /Could not find the '(.+)' column/;
+      
+      const missingColumnMatch = error.message.match(pgRegex) || error.message.match(restRegex);
+      
+      if (missingColumnMatch) {
+        const missingCol = missingColumnMatch[1];
+        console.log(`🧹 Auto-healing: Removing missing column "${missingCol}" and retrying...`);
+        
+        // Append missing data to description so it's not lost
+        if (insertPayload[missingCol]) {
+            insertPayload.description = `[${missingCol}: ${insertPayload[missingCol]}]\n${insertPayload.description}`;
+        }
+        delete insertPayload[missingCol];
+        
+        const retry = await supabase
+          .from('complaints')
+          .insert([insertPayload])
+          .select();
+        
+        data = retry.data;
+        error = retry.error;
+        
+        // Recursive check in case multiple columns are missing
+        if (error && (error.message.includes('does not exist') || error.message.includes('schema cache'))) {
+            const missingCol2Match = error.message.match(pgRegex) || error.message.match(restRegex);
+            if (missingCol2Match) {
+                const missingCol2 = missingCol2Match[1];
+                console.log(`🧹 Auto-healing: Also removing "${missingCol2}"`);
+                if (insertPayload[missingCol2]) {
+                    insertPayload.description = `[${missingCol2}: ${insertPayload[missingCol2]}]\n${insertPayload.description}`;
+                }
+                delete insertPayload[missingCol2];
+                const retry2 = await supabase.from('complaints').insert([insertPayload]).select();
+                data = retry2.data;
+                error = retry2.error;
+            }
+        }
+      }
+    }
 
     if (error) {
       console.error('Supabase Insert Error:', error);
@@ -93,23 +129,41 @@ router.post('/', async (req, res) => {
 
     // 4. Handle Notifications (Multi-channel)
     if (data[0]) {
-      const recipientEmail = process.env.EMAIL_USER; 
-      const recipientPhone = process.env.SYSTEM_PHONE_NUMBER; 
+      const complaint = data[0];
+      let recipientEmail = null;
+      let recipientPhone = null;
+
+      // Identify if citizen_id is an email or phone
+      if (complaint.citizen_id && complaint.citizen_id !== 'anonymous') {
+        const cid = complaint.citizen_id;
+        if (cid.includes('@') && !cid.endsWith('@c.us') && !cid.endsWith('@lid')) {
+          recipientEmail = cid;
+        } else if (cid.includes('@c.us') || cid.includes('@lid') || /^\+?\d+$/.test(cid.split('@')[0])) {
+          recipientPhone = cid;
+        }
+      }
+
+      // Also allow system-wide notifications if configured
+      const adminEmail = process.env.EMAIL_USER;
+      const adminPhone = process.env.SYSTEM_PHONE_NUMBER || process.env.TWILIO_PHONE;
 
       // Standard multi-channel notification (Email, SMS, WhatsApp)
       const { notifyCitizen, sendVoiceAlert } = require('../services/notificationService');
-      notifyCitizen('update', recipientEmail, recipientPhone, data[0]).catch(err => {
-        console.error("Background notification error:", err);
-      });
-
-      // 5. Special Emergency Action: Voice Call
-      if (is_emergency) {
-        const sosText = `Emergency alert from Smart Governance System. A citizen has triggered an S.O.S. at location ${location}. Immediate response required.`;
-        sendVoiceAlert(recipientPhone, sosText).catch(err => {
-          console.error("Background voice alert error:", err);
+      
+      // Notify the citizen
+      if (recipientEmail || recipientPhone) {
+        notifyCitizen('update', recipientEmail, recipientPhone, complaint).catch(err => {
+          console.error("Citizen notification error:", err.message);
         });
       }
 
+      // Notify the admin/system if it's an emergency or as a log
+      if (is_emergency && adminPhone) {
+        const sosText = `Emergency alert from Smart Governance System. A citizen has triggered an S.O.S. at location ${location || address}. Immediate response required.`;
+        sendVoiceAlert(adminPhone, sosText).catch(err => {
+          console.error("Background voice alert error:", err.message);
+        });
+      }
     }
 
     res.status(201).json({ 

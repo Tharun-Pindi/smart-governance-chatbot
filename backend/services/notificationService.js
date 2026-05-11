@@ -90,7 +90,7 @@ const sendVoiceAlert = async (to, text) => {
 const notifyCitizen = async (type, recipientEmail, recipientPhone, data) => {
   const message = `SmartGov Update: Your complaint regarding "${data.title}" is now "${data.status}". Dept: ${data.department || 'General'}.\n\nస్మార్ట్ గవర్నెన్స్ అప్‌డేట్: మీ ఫిర్యాదు "${data.title}" ఇప్పుడు "${data.status}" స్థితిలో ఉంది. విభాగం: ${data.department || 'సాధారణం'}.`;
   
-  console.log(`📢 Notifying citizen. Email: ${recipientEmail}, Phone: ${recipientPhone}`);
+  console.log(`📢 Notifying citizen. Email: ${recipientEmail || 'N/A'}, Phone: ${recipientPhone || 'N/A'}`);
   
   // Send multi-channel notifications
   if (recipientEmail) {

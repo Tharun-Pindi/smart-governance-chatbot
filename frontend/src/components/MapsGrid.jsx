@@ -16,7 +16,7 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
-const MapsGrid = ({ complaints, onSelectComplaint, view = 'both' }) => {
+const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, wardNumber }) => {
   const defaultCenter = [17.3850, 78.4867]; // Hyderabad
 
   const markers = complaints
@@ -39,12 +39,30 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both' }) => {
   const showLive = view === 'both' || view === 'live';
   const showHeatmap = view === 'both' || view === 'heatmap';
 
+  const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316'];
+  const uniqueCategories = Array.from(new Set(markers.map(m => m.category || 'Other')));
+  const categoryColors = uniqueCategories.reduce((acc, cat, idx) => {
+    acc[cat] = COLORS[idx % COLORS.length];
+    return acc;
+  }, {});
+
+  const createCustomIcon = (color) => {
+    return L.divIcon({
+      className: 'custom-colored-marker',
+      html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8]
+    });
+  };
+
   return (
     <div className={`grid ${view === 'both' ? 'grid-2' : 'grid-1'} mb-6 animate-fade-in`} style={{ width: '100%' }}>
       {/* Live Map */}
       {showLive && (
         <div className="card">
-          <h3 className="mb-4" style={{ fontSize: '1rem', fontWeight: 700 }}>Live Complaints Map</h3>
+          <h3 className="mb-4" style={{ fontSize: '1rem', fontWeight: 700 }}>
+            {userRole === 'ward_admin' ? `Ward Map (Ward ${wardNumber})` : 'Live Complaints Map'}
+          </h3>
           <div className="map-container">
             <MapContainer key={`map-${center[0]}-${center[1]}`} center={center} zoom={12} style={{ height: '100%', width: '100%' }}>
               <TileLayer
@@ -55,6 +73,7 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both' }) => {
                 <Marker 
                   key={m.id} 
                   position={[m.lat, m.lng]}
+                  icon={createCustomIcon(categoryColors[m.category || 'Other'])}
                   eventHandlers={{
                     click: () => onSelectComplaint(complaints.find(c => c.id === m.id))
                   }}
@@ -85,18 +104,12 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both' }) => {
               boxShadow: 'var(--shadow-md)',
               fontSize: '0.75rem'
             }}>
-              <div className="flex items-center gap-2 mb-1">
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#3b82f6' }}></div>
-                <span>Water Issue</span>
-              </div>
-              <div className="flex items-center gap-2 mb-1">
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#f59e0b' }}></div>
-                <span>Road Issue</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#10b981' }}></div>
-                <span>Garbage</span>
-              </div>
+              {uniqueCategories.map(cat => (
+                <div key={cat} className="flex items-center gap-2 mb-1" style={{ marginBottom: '4px' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: categoryColors[cat] }}></div>
+                  <span style={{ fontSize: '0.75rem' }}>{cat}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>

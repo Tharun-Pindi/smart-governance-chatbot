@@ -1,11 +1,13 @@
 import React from 'react';
 import { Eye, Edit2, MessageCircle, ChevronRight } from 'lucide-react';
 
-const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onViewImage }) => {
+const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onViewImage, userRole, wardNumber }) => {
   return (
     <div className="card animate-fade-in">
       <div className="flex justify-between items-center mb-6">
-        <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>Recent Complaints</h3>
+        <h3 style={{ fontSize: '1rem', fontWeight: 700 }}>
+          {userRole === 'ward_admin' ? `Recent Complaints in Ward ${wardNumber}` : 'Recent Complaints'}
+        </h3>
         <button 
           className="btn-premium" 
           onClick={onViewAll}
@@ -25,6 +27,7 @@ const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onVie
               <th>Location</th>
               <th>Ward</th>
               <th>Status</th>
+              <th>Citizen Name</th>
               <th>Reported By</th>
               <th>Date & Time</th>
               <th>Action</th>
@@ -64,7 +67,8 @@ const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onVie
                     {c.status}
                   </span>
                 </td>
-                <td>{c.citizen_id || '+91 98765 43210'}</td>
+                <td style={{ fontWeight: 600 }}>{c.citizen_name || 'N/A'}</td>
+                <td>{c.citizen_id || 'Anonymous'}</td>
                 <td>{new Date(c.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                 <td>
                   <div className="flex gap-3">

@@ -20,66 +20,11 @@ app.get('/', (req, res) => {
 const { sendSMS, sendEmail } = require('./services/notificationService');
 const otps = new Map();
 
-app.post('/api/auth/otp/send', async (req, res) => {
-  let { phoneNumber } = req.body;
-  if (!phoneNumber) return res.status(400).json({ error: 'Phone number/Email is required' });
-  
-  phoneNumber = phoneNumber.trim().toLowerCase(); // Normalize
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  otps.set(phoneNumber, { otp, expires: Date.now() + 5 * 60 * 1000 });
-  
-  // console.log(`🔐 [AUTH] OTP for ${phoneNumber}: ${otp}`);
-
-  try {
-    try {
-      if (phoneNumber.includes('@')) {
-        const subject = "SmartGov Verification Code";
-        const html = `
-          <div style="font-family: sans-serif; padding: 20px;">
-            <h2>SmartGov Verification</h2>
-            <p>Your 6-digit verification code is: <strong style="font-size: 1.5rem; color: #4f46e5;">${otp}</strong></p>
-            <p>This code is valid for 5 minutes. Do not share it with anyone.</p>
-          </div>
-        `;
-        await sendEmail(phoneNumber, subject, html);
-      } else {
-        const message = `SmartGov Verification Code: ${otp}. Valid for 5 minutes.`;
-        await sendSMS(phoneNumber, message);
-      }
-
-      res.json({ message: 'OTP sent successfully!' });
-    } catch (err) {
-      console.error('Notification Error:', err.message);
-      res.status(500).json({ error: `Failed to deliver OTP: ${err.message}` });
-    }
-  } catch (error) {
-    res.status(500).json({ error: `System Error: ${error.message}` });
-  }
-});
-
-app.post('/api/auth/otp/verify', async (req, res) => {
-  let { phoneNumber, otp } = req.body;
-  if (!phoneNumber || !otp) return res.status(400).json({ error: 'Missing data' });
-
-  phoneNumber = phoneNumber.trim().toLowerCase();
-  otp = otp.trim();
-
-  // Test bypass for easier workflow testing
-  if (otp === '123456') {
-    return res.json({ success: true });
-  }
-
-  const stored = otps.get(phoneNumber);
-  // console.log(`🧐 [AUTH] Verifying ${phoneNumber}: Input=${otp}, Stored=${stored?.otp}`);
-
-  if (stored && stored.otp === otp && Date.now() < stored.expires) {
-    otps.delete(phoneNumber);
-    return res.json({ success: true });
-  }
-  res.status(400).json({ error: 'Invalid or expired OTP' });
-});
+// Authentication routes are handled in ./routes/auth.js
+// redundant logic removed to fix 404 conflict
 
 app.use('/api/ai', require('./routes/ai'));
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/broadcast', require('./routes/broadcast'));
 app.use('/api/webhooks', require('./routes/webhooks'));
@@ -206,7 +151,8 @@ try {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`🚀 Smart Governance Server is running on port ${PORT}`);
+  console.log(`📅 Startup Time: ${new Date().toLocaleString()}`);
 });
 
 // Graceful shutdown

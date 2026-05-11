@@ -157,7 +157,23 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
               <div className="flex items-start gap-3">
                 <User size={18} color="var(--success)" style={{ marginTop: '3px' }} />
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Reported By</label>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Citizen Name</label>
+                  <p style={{ fontSize: '0.875rem' }}>{complaint.citizen_name || 'N/A'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <User size={18} color="#6366f1" style={{ marginTop: '3px' }} />
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Ward No</label>
+                  <p style={{ fontSize: '0.875rem' }}>{complaint.ward || 'General'}</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <MessageSquare size={18} color="#64748b" style={{ marginTop: '3px' }} />
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Phone / ID</label>
                   <p style={{ fontSize: '0.875rem' }}>{complaint.citizen_id}</p>
                 </div>
               </div>
