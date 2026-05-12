@@ -52,19 +52,34 @@ const sendEmail = async (to, subject, html) => {
 const sendSMS = async (to, message) => {
   try {
     if (!twilioClient) {
-      console.warn("Twilio credentials missing. SMS skipped. (Log: " + message + ")");
+      console.warn("Twilio credentials missing. SMS skipped.");
       return;
     }
+
+    // Skip SMS for WhatsApp internal IDs (@c.us or @lid)
+    if (to.includes('@')) {
+      console.log('ℹ️ Skipping SMS for WhatsApp ID:', to);
+      return;
+    }
+
+    // Basic cleaning for phone numbers
+    const cleanNumber = to.replace(/\s/g, '');
+    if (!/^\+?\d+$/.test(cleanNumber)) {
+        console.warn('⚠️ Invalid phone number format for SMS:', cleanNumber);
+        return;
+    }
+
     await twilioClient.messages.create({
       body: message,
       from: process.env.TWILIO_PHONE,
-      to: to
+      to: cleanNumber
     });
-    console.log('✅ SMS alert sent to:', to);
+    console.log('✅ SMS alert sent to:', cleanNumber);
   } catch (error) {
     console.error("❌ SMS Error:", error.message);
   }
 };
+
 const sendWhatsApp = async (to, message) => {
   const { sendWhatsAppMessage } = require('./whatsappService');
   return sendWhatsAppMessage(to, message);
@@ -73,9 +88,13 @@ const sendWhatsApp = async (to, message) => {
 const sendVoiceAlert = async (to, text) => {
   try {
     if (!twilioClient) {
-      console.warn("Twilio credentials missing. Voice call skipped. (Log: " + text + ")");
+      console.warn("Twilio credentials missing. Voice call skipped.");
       return;
     }
+    
+    // Skip Voice for WhatsApp IDs
+    if (to.includes('@')) return;
+
     await twilioClient.calls.create({
       twiml: `<Response><Say voice="alice">${text}</Say></Response>`,
       to: to,
@@ -90,17 +109,21 @@ const sendVoiceAlert = async (to, text) => {
 const notifyCitizen = async (type, recipientEmail, recipientPhone, data) => {
   const message = `SmartGov Update: Your complaint regarding "${data.title}" is now "${data.status}". Dept: ${data.department || 'General'}.\n\nస్మార్ట్ గవర్నెన్స్ అప్‌డేట్: మీ ఫిర్యాదు "${data.title}" ఇప్పుడు "${data.status}" స్థితిలో ఉంది. విభాగం: ${data.department || 'సాధారణం'}.`;
   
-  console.log(`📢 Notifying citizen. Email: ${recipientEmail || 'N/A'}, Phone: ${recipientPhone || 'N/A'}`);
+  console.log(`📢 [NOTIFY] Recipient Email: ${recipientEmail || 'N/A'}, Phone/Chat: ${recipientPhone || 'N/A'}`);
   
-  // Send multi-channel notifications
+  // Send notifications without blocking the main process
   if (recipientEmail) {
-    await notifyCitizenEmail(recipientEmail, data).catch(err => console.error("❌ Email notification failed:", err.message));
+    sendEmail(recipientEmail, `Update: ${data.title}`, message).catch(e => console.error("❌ Email notify error:", e.message));
   }
   
   if (recipientPhone) {
-    console.log(`📱 Sending WhatsApp/SMS to ${recipientPhone}...`);
-    await sendSMS(recipientPhone, message).catch(err => console.error("❌ SMS notification failed:", err.message));
-    await sendWhatsApp(recipientPhone, message).catch(err => console.error("❌ WhatsApp notification failed:", err.message));
+    // If it's a WhatsApp ID or a phone number, try WhatsApp first
+    sendWhatsApp(recipientPhone, message).catch(e => console.error("❌ WhatsApp notify error:", e.message));
+    
+    // Only try SMS if it's NOT a WhatsApp specific ID
+    if (!recipientPhone.includes('@')) {
+       sendSMS(recipientPhone, message).catch(e => console.error("❌ SMS notify error:", e.message));
+    }
   }
 };
 

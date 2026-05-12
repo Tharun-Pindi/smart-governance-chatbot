@@ -13,12 +13,14 @@ import {
   Database,
   CheckCircle2,
   XCircle,
-  ExternalLink
+  ExternalLink,
+  Users,
+  Plus
 } from 'lucide-react';
 
 import axios from 'axios';
 
-const Settings = ({ userProfile, setUserProfile, phoneNumber, userRole }) => {
+const Settings = ({ userProfile, setUserProfile, phoneNumber, userRole, onAddAdmin }) => {
   const [activeTab, setActiveTab] = useState('profile');
   const [localProfile, setLocalProfile] = useState(userProfile);
   const [performanceData, setPerformanceData] = useState(Array(20).fill(30));
@@ -202,6 +204,7 @@ const Settings = ({ userProfile, setUserProfile, phoneNumber, userRole }) => {
             <button className={activeTab === 'security' ? 'active' : ''} onClick={() => setActiveTab('security')}>Security</button>
             <button className={activeTab === 'notifications' ? 'active' : ''} onClick={() => setActiveTab('notifications')}>Global</button>
             <button className={activeTab === 'whatsapp' ? 'active' : ''} onClick={() => setActiveTab('whatsapp')}>WhatsApp</button>
+            {userRole === 'super_admin' && <button className={activeTab === 'team' ? 'active' : ''} onClick={() => setActiveTab('team')}>Team</button>}
           </div>
 
           <div className="tab-content-dynamic">
@@ -386,6 +389,38 @@ const Settings = ({ userProfile, setUserProfile, phoneNumber, userRole }) => {
                  </div>
                </div>
             )}
+
+            {activeTab === 'team' && (
+                <div className="control-list fade-in">
+                  <div className="cockpit-card" style={{ background: 'var(--bg-main)', border: '1px solid var(--border-color)' }}>
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="icon-wrap" style={{ background: 'var(--primary)', color: 'white' }}>
+                        <Users size={20} />
+                      </div>
+                      <div>
+                        <h4 style={{ fontWeight: 800 }}>Admin Management</h4>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Create and manage access for ward members</p>
+                      </div>
+                    </div>
+                    
+                    <div style={{ padding: '1.25rem', background: 'white', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                       <p style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>System Access Control</p>
+                       <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                         As a Super Admin, you can authorize new administrators for specific wards. These users will be able to manage complaints within their assigned jurisdiction.
+                       </p>
+                    </div>
+
+                    <button 
+                      className="btn-premium" 
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={onAddAdmin}
+                    >
+                      <Plus size={18} />
+                      Add New Administrator
+                    </button>
+                  </div>
+                </div>
+             )}
           </div>
         </div>
       </div>

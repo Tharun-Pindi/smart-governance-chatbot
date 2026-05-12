@@ -4,6 +4,58 @@ const supabase = require('../services/supabaseService');
 const { classifyComplaint, checkDuplicateWithAI, analyzeAndCheckDuplicate } = require('../services/aiService');
 const { notifyCitizen } = require('../services/notificationService');
 const { uploadBase64 } = require('../services/cloudinaryService');
+const { info, success, error: logError } = require('../services/logService');
+
+// --- Helper: Generate Smart Readable ID ---
+const generateSmartId = (data) => {
+    const { address, ward, citizen_name, category } = data;
+    
+    // 1. City Prefix Mapping
+    const cityMap = {
+        'rajahmundry': 'RJY',
+        'vizayawada': 'VJW',
+        'vijayawada': 'VJW',
+        'vizag': 'VZG',
+        'visakhapatnam': 'VZG',
+        'narsipatnam': 'NPT',
+        'tuni': 'TNI',
+        'annavaram': 'ANV',
+        'hyderabad': 'HYD',
+        'guntur': 'GNT',
+        'kakinada': 'KKD',
+        'nellore': 'NLR',
+        'tirupati': 'TPT'
+    };
+    
+    let cityPrefix = 'GEN';
+    const locLower = (address || '').toLowerCase();
+    for (const [city, prefix] of Object.entries(cityMap)) {
+        if (locLower.includes(city)) {
+            cityPrefix = prefix;
+            break;
+        }
+    }
+    
+    // 2. Category Prefix (3 Letters)
+    const catPrefix = (category || 'Other').replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase();
+    
+    // 3. Ward Part (e.g. W12)
+    const wardPart = ward ? `W${ward}` : 'WXX';
+    
+    // 4. Name Initials (2 Letters)
+    const initials = (citizen_name || 'Anon')
+        .split(' ')
+        .filter(n => n.length > 0)
+        .map(n => n[0])
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
+        
+    // 5. Random 4-digit Suffix
+    const random = Math.floor(1000 + Math.random() * 9000);
+    
+    return `SG-${cityPrefix}-${catPrefix}-${wardPart}-${initials}-${random}`;
+};
 
 // Create a new complaint
 router.post('/', async (req, res) => {
@@ -41,13 +93,33 @@ router.post('/', async (req, res) => {
       .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     // 2. Use AI to classify the complaint
-    // We removed the duplicate check to allow citizens to report the same issue multiple times
     const aiResult = await analyzeAndCheckDuplicate({ description, address }, []);
 
+    // 2.1 Early Keyword Detection (Failsafe for SOS/Urgent)
+    const emergencyKeywords = ["urgent", "help", "sos", "emergency", "compulsary"];
+    const hasEmergencyKeyword = emergencyKeywords.some(word => 
+      description.toLowerCase().includes(word)
+    );
+    
+    if (hasEmergencyKeyword) {
+      aiResult.priority = "Urgent";
+    }
+
+
+    // 2.2 Generate Smart Readable ID
+    const smartId = generateSmartId({
+        address,
+        ward: ward || aiResult.ward,
+        citizen_name: citizen_name || 'Citizen',
+        category: category || aiResult.category
+    });
 
     // 3. Save to Supabase (Robust Insert)
+    const baseTitle = title || aiResult.title || (description.split(' ').slice(0, 3).join(' ') + (description.split(' ').length > 3 ? '...' : ''));
+    
     let insertPayload = {
-      title: title || aiResult.title || (description.split(' ').slice(0, 3).join(' ') + (description.split(' ').length > 3 ? '...' : '')),
+      tracking_id: smartId,
+      title: `[${smartId}] ${baseTitle}`,
       description,
       category: category || aiResult.category,
       priority: is_emergency ? 'High' : aiResult.priority,
@@ -169,6 +241,7 @@ router.post('/', async (req, res) => {
     res.status(201).json({ 
       message: 'Complaint submitted successfully', 
       complaint: data[0],
+      tracking_id: smartId,
       ai_analysis: aiResult 
     });
   } catch (error) {

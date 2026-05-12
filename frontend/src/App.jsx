@@ -6,9 +6,10 @@ import StatsCards from './components/StatsCards';
 import ChartsGrid from './components/ChartsGrid';
 import MapsGrid from './components/MapsGrid';
 import RecentComplaintsTable from './components/RecentComplaintsTable';
+import SystemLogs from './components/SystemLogs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { 
-  Eye, Edit2, Search, Filter, ArrowLeft, X,
+  Eye, Edit2, Search, Filter, ArrowLeft, X, Trash2, Plus,
   LayoutDashboard, MessageSquare, Grid, Map as MapIcon, MapPin, Layers, Users, BarChart3, Bell, Settings as SettingsIcon, HelpCircle, CheckCircle2, Calendar, Download 
 } from 'lucide-react';
 
@@ -17,6 +18,7 @@ const API_BASE_URL = 'http://localhost:5001/api';
 import ComplaintModal from './components/ComplaintModal';
 import Settings from './components/Settings';
 import WardDashboard from './components/WardDashboard';
+import FeedbackHub from './components/FeedbackHub';
 
 
 const menuItems = [
@@ -55,6 +57,9 @@ const App = () => {
     email: '',
     avatar: 'A'
   });
+  const [admins, setAdmins] = useState([]);
+  const [isAddAdminModalOpen, setIsAddAdminModalOpen] = useState(false);
+  const [newAdmin, setNewAdmin] = useState({ name: '', phone: '', role: 'ward_admin', ward: '' });
   const [dateRange, setDateRange] = useState({ 
     start: new Date(new Date().setDate(new Date().getDate() - 30)), 
     end: new Date() 
@@ -62,10 +67,61 @@ const App = () => {
 
   useEffect(() => {
     fetchComplaints();
+    fetchAdmins();
     
-    const interval = setInterval(fetchComplaints, 10000);
+    const interval = setInterval(() => {
+        fetchComplaints();
+        fetchAdmins();
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const fetchAdmins = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/auth/admins`);
+      setAdmins(response.data);
+    } catch (err) {
+      console.error('Failed to fetch admins');
+    }
+  };
+
+  const handleAddAdmin = async (e) => {
+    e.preventDefault();
+    setLoginLoading(true);
+    try {
+      // Ensure phone number has +91 if missing
+      const formattedAdmin = {
+        ...newAdmin,
+        phone: newAdmin.phone.startsWith('+') ? newAdmin.phone : `+91${newAdmin.phone}`
+      };
+      
+      console.log('Registering new admin:', formattedAdmin);
+      const response = await axios.post(`${API_BASE_URL}/auth/admins`, formattedAdmin);
+      
+      if (response.data) {
+        setIsAddAdminModalOpen(false);
+        setNewAdmin({ name: '', phone: '', role: 'ward_admin', ward: '' });
+        await fetchAdmins();
+        alert('Admin registered successfully!');
+      }
+    } catch (err) {
+      console.error('Add Admin Error:', err.response?.data || err.message);
+      const errorMsg = err.response?.data?.error || err.message;
+      alert(`Failed to add admin: ${errorMsg}`);
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (id) => {
+    if (!window.confirm('Are you sure you want to remove this admin?')) return;
+    try {
+      await axios.delete(`${API_BASE_URL}/auth/admins/${id}`);
+      fetchAdmins();
+    } catch (err) {
+      alert('Failed to delete admin');
+    }
+  };
 
   const fetchComplaints = async () => {
     try {
@@ -381,7 +437,7 @@ const App = () => {
                 <ChartsGrid complaints={filteredComplaints} userRole={userRole} wardNumber={wardNumber} />
               </ErrorBoundary>
               <ErrorBoundary>
-                <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} userRole={userRole} wardNumber={wardNumber} view="both" />
+                <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} selectedComplaint={selectedComplaint} userRole={userRole} wardNumber={wardNumber} view="both" />
               </ErrorBoundary>
               <ErrorBoundary>
                 <RecentComplaintsTable 
@@ -614,7 +670,7 @@ const App = () => {
                   </div>
                </div>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="live" userRole={userRole} wardNumber={wardNumber} />
+            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} selectedComplaint={selectedComplaint} view="live" userRole={userRole} wardNumber={wardNumber} />
           </div>
         )}
 
@@ -627,30 +683,69 @@ const App = () => {
                <h2 style={{ fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Location Density Heatmap</h2>
                <p style={{ color: 'var(--text-muted)', maxWidth: '600px', margin: '0.5rem auto 0' }}>Analyzing clustering of reports in real-time to identify high-priority intervention zones.</p>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} view="heatmap" userRole={userRole} wardNumber={wardNumber} />
+            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} selectedComplaint={selectedComplaint} view="heatmap" userRole={userRole} wardNumber={wardNumber} />
           </div>
         )}
 
         {activeTab === 'users' && (
           <div className="card animate-fade-in" style={{ marginTop: '1rem' }}>
-            <h2 className="mb-6" style={{ fontSize: '1.5rem', fontWeight: 800 }}>Citizen Directory</h2>
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Admin & Ward Management</h2>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Manage system access for Ward Members and Staff</p>
+              </div>
+              {userRole === 'super_admin' && (
+                <button 
+                  className="btn-premium" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log("Opening Add Admin Modal...");
+                    setIsAddAdminModalOpen(true);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <Plus size={18} />
+                  Add New Admin
+                </button>
+              )}
+            </div>
+
             <div style={{ overflowX: 'auto' }}>
               <table className="recent-complaints-table">
                 <thead>
                   <tr>
-                    <th>User ID</th>
-                    <th>Last Active</th>
-                    <th>Reports Filed</th>
-                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Phone Number</th>
+                    <th>Role</th>
+                    <th>Ward Assignment</th>
+                    <th>Joined Date</th>
+                    {userRole === 'super_admin' && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {Array.from(new Set(filteredComplaints.map(c => c.citizen_id))).map(userId => (
-                    <tr key={userId}>
-                      <td style={{ fontWeight: 600 }}>{userId}</td>
-                      <td>{new Date(filteredComplaints.find(c => c.citizen_id === userId).created_at).toLocaleDateString()}</td>
-                      <td>{filteredComplaints.filter(c => c.citizen_id === userId).length}</td>
-                      <td><span className="status-badge status-resolved">Active</span></td>
+                  {admins.map((admin) => (
+                    <tr key={admin.id}>
+                      <td style={{ fontWeight: 600 }}>{admin.name}</td>
+                      <td>{admin.phone}</td>
+                      <td>
+                        <span className={`status-badge ${admin.role === 'super_admin' ? 'status-urgent' : 'status-resolved'}`}>
+                          {admin.role === 'super_admin' ? 'Super Admin' : 'Ward Member'}
+                        </span>
+                      </td>
+                      <td>{admin.ward ? `Ward ${admin.ward}` : 'City-wide'}</td>
+                      <td>{new Date(admin.created_at).toLocaleDateString()}</td>
+                      {userRole === 'super_admin' && (
+                        <td>
+                          <button 
+                            className="action-btn-modern delete" 
+                            style={{ color: '#ef4444' }}
+                            onClick={() => handleDeleteAdmin(admin.id)}
+                            disabled={admin.phone === phoneNumber} // Can't delete self
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -799,17 +894,31 @@ const App = () => {
           </div>
         )}
 
+        {activeTab === 'feedback' && (
+          <FeedbackHub 
+            complaints={filteredComplaints}
+            userRole={userRole}
+            wardNumber={wardNumber}
+            onViewImage={setFullscreenImage}
+          />
+        )}
+
         {activeTab === 'settings' && (
           <Settings 
             userProfile={userProfile} 
             setUserProfile={setUserProfile} 
             phoneNumber={phoneNumber}
             userRole={userRole}
+            onAddAdmin={() => setIsAddAdminModalOpen(true)}
           />
         )}
 
+        {activeTab === 'logs' && userRole === 'super_admin' && (
+           <SystemLogs />
+        )}
+
         {/* Catch-all for remaining tabs */}
-        {!['dashboard', 'complaints', 'categories', 'mapview', 'heatmap', 'users', 'reports', 'wards', 'settings', 'alerts'].includes(activeTab) && (
+        {!['dashboard', 'complaints', 'categories', 'mapview', 'heatmap', 'users', 'reports', 'wards', 'settings', 'alerts', 'logs', 'feedback'].includes(activeTab) && (
 
           <div className="card animate-fade-in" style={{ textAlign: 'center', padding: '5rem' }}>
             <div className="avatar" style={{ margin: '0 auto 1.5rem', width: 64, height: 64, background: 'var(--bg-main)' }}>
@@ -822,6 +931,73 @@ const App = () => {
             <p style={{ color: 'var(--text-muted)' }}>Fetching live stream for this sector...</p>
             <div style={{ width: 200, height: 4, background: '#e2e8f0', margin: '1.5rem auto', borderRadius: 2, overflow: 'hidden' }}>
               <div className="loading-bar-animation" style={{ width: '60%', height: '100%', background: 'var(--accent-color)' }}></div>
+            </div>
+          </div>
+        )}
+        {/* Add Admin Modal */}
+        {isAddAdminModalOpen && (
+          <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div className="card" style={{ width: '100%', maxWidth: '450px', padding: '2rem' }}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Add New System Admin</h2>
+                <button onClick={() => setIsAddAdminModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={20} /></button>
+              </div>
+
+              <form onSubmit={handleAddAdmin} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Full Name</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="Enter full name"
+                    value={newAdmin.name}
+                    onChange={(e) => setNewAdmin({...newAdmin, name: e.target.value})}
+                    style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Phone Number (with +91)</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="+919876543210"
+                    value={newAdmin.phone}
+                    onChange={(e) => setNewAdmin({...newAdmin, phone: e.target.value})}
+                    style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Role</label>
+                  <select 
+                    value={newAdmin.role}
+                    onChange={(e) => setNewAdmin({...newAdmin, role: e.target.value})}
+                    style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', outline: 'none', background: 'white' }}
+                  >
+                    <option value="ward_admin">Ward Member / Admin</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </div>
+
+                {newAdmin.role === 'ward_admin' && (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem' }}>Ward Assignment</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 5"
+                      value={newAdmin.ward}
+                      onChange={(e) => setNewAdmin({...newAdmin, ward: e.target.value})}
+                      style={{ width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid var(--border-color)', outline: 'none' }}
+                    />
+                  </div>
+                )}
+
+                <div className="flex gap-3 mt-4">
+                  <button type="button" className="btn-premium" style={{ background: '#f1f5f9', color: '#64748b', flex: 1 }} onClick={() => setIsAddAdminModalOpen(false)}>Cancel</button>
+                  <button type="submit" className="btn-premium" style={{ flex: 1 }}>Register Admin</button>
+                </div>
+              </form>
             </div>
           </div>
         )}

@@ -464,3 +464,103 @@ body {
   font-weight: 500;
   color: var(--text-main);
 }
+/* Map Marker Premium Styling */
+.custom-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 32px;
+  height: 40px;
+}
+
+.marker-pin-outer {
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 2;
+}
+
+.marker-pin-outer:hover {
+  transform: rotate(-45deg) scale(1.15) translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+}
+
+.marker-pin-inner {
+  width: 10px;
+  height: 10px;
+  background: white;
+  border-radius: 50%;
+  transform: rotate(45deg);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.marker-shadow {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 6px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 50%;
+  filter: blur(2px);
+  z-index: 1;
+}
+
+.marker-pulse-ring {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 4px solid #ef4444;
+  animation: marker-pulse-anim 2s infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes marker-pulse-anim {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.8; }
+  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
+}
+
+.marker-pin-urgent .marker-pin-outer {
+  animation: pin-bounce 0.5s infinite alternate ease-in-out;
+}
+
+@keyframes pin-bounce {
+  from { transform: rotate(-45deg) translateY(0); }
+  to { transform: rotate(-45deg) translateY(-4px); }
+}
+
+/* Custom Popup Styling */
+.custom-popup .leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-color);
+}
+
+.custom-popup .leaflet-popup-tip {
+  background: white;
+}
+
+.leaflet-container {
+  font-family: inherit !important;
+}

@@ -62,7 +62,7 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
                   {status}
                 </span>
                 <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                  ID: SG-{complaint.id.substring(0, 8).toUpperCase()}
+                  ID: SG-{String(complaint.id || '').substring(0, 8).toUpperCase()}
                 </span>
               </div>
               <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{complaint.title || 'No Title'}</h2>

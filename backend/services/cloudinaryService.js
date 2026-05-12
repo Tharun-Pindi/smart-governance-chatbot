@@ -11,7 +11,11 @@ const uploadBase64 = async (base64String) => {
   try {
     const result = await cloudinary.uploader.upload(base64String, { 
       folder: "smartgov_complaints",
-      resource_type: "auto"
+      resource_type: "auto",
+      quality: "auto",
+      fetch_format: "auto",
+      width: 1200,
+      crop: "limit"
     });
     return result.secure_url;
   } catch (error) {

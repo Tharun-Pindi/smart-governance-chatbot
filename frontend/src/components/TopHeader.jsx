@@ -105,7 +105,7 @@ const TopHeader = ({ userRole = 'super_admin', wardNumber = '5', setWardNumber, 
             <div className="flex items-center gap-1">
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', marginRight: '4px' }}>
                 <span style={{ fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.2 }}>
-                  {userRole === 'ward_admin' ? 'Rajesh Kumar' : (userProfile?.name || 'Admin')}
+                  {userProfile?.name || 'Admin User'}
                 </span>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 500 }}>
                   {userRole === 'ward_admin' ? `Ward ${wardNumber} Admin` : 'Super Admin'}

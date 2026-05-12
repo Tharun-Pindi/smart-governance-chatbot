@@ -2,6 +2,8 @@ import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { Eye } from 'lucide-react';
+
 
 // Fix Leaflet icon issue
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -16,8 +18,28 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
-const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, wardNumber }) => {
-  const defaultCenter = [17.3850, 78.4867]; // Hyderabad
+const FlyToLocation = ({ complaint }) => {
+  const map = useMap();
+  
+  React.useEffect(() => {
+    if (complaint && complaint.location) {
+      const parts = complaint.location.split(',').map(p => parseFloat(p.trim()));
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        map.flyTo([parts[0], parts[1]], 18, { 
+          duration: 1.5,
+          easeLinearity: 0.25
+        });
+      }
+    }
+  }, [complaint, map]);
+  
+  return null;
+};
+
+
+
+const MapsGrid = ({ complaints, onSelectComplaint, selectedComplaint, view = 'both', userRole, wardNumber }) => {
+  const defaultCenter = [17.2, 80.1]; // Regional view covering Hyderabad to Rajahmundry
 
   const markers = complaints
     .filter(c => typeof c.location === 'string' && c.location.includes(','))
@@ -25,7 +47,15 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, ward
       try {
         const parts = c.location.split(',').map(p => parseFloat(p.trim()));
         if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          return { id: c.id, lat: parts[0], lng: parts[1], title: c.title, category: c.category };
+          return { 
+            id: c.id, 
+            lat: parts[0], 
+            lng: parts[1], 
+            title: c.title || c.category || 'Untitled Report', 
+            category: c.category || 'Other',
+            status: c.status || 'Pending',
+            priority: c.priority || 'Medium'
+          };
         }
       } catch (e) {
         console.error("Error parsing location:", c.location, e);
@@ -46,12 +76,24 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, ward
     return acc;
   }, {});
 
-  const createCustomIcon = (color) => {
+  const createCustomIcon = (color, priority, status) => {
+    const isUrgent = priority === 'Urgent' || priority === 'High';
+    const isPending = status === 'Pending';
+    
     return L.divIcon({
-      className: 'custom-colored-marker',
-      html: `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8]
+      className: `custom-marker-icon ${isUrgent ? 'marker-pin-urgent' : ''}`,
+      html: `
+        <div class="custom-marker-container">
+          <div class="marker-pin-outer" style="background-color: ${color};">
+            <div class="marker-pin-inner"></div>
+          </div>
+          <div class="marker-shadow"></div>
+          ${isUrgent ? '<div class="marker-pulse-ring"></div>' : ''}
+        </div>
+      `,
+      iconSize: [32, 40],
+      iconAnchor: [16, 40],
+      popupAnchor: [0, -36]
     });
   };
 
@@ -64,30 +106,44 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, ward
             {userRole === 'ward_admin' ? `Ward Map (Ward ${wardNumber})` : 'Live Complaints Map'}
           </h3>
           <div className="map-container">
-            <MapContainer key={`map-${center[0]}-${center[1]}`} center={center} zoom={12} style={{ height: '100%', width: '100%' }}>
+            <MapContainer key="fixed-live-map" center={defaultCenter} zoom={6} maxZoom={19} style={{ height: '100%', width: '100%' }}>
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
+              <FlyToLocation complaint={selectedComplaint} />
               {markers.map(m => (
                 <Marker 
                   key={m.id} 
                   position={[m.lat, m.lng]}
-                  icon={createCustomIcon(categoryColors[m.category || 'Other'])}
+                  icon={createCustomIcon(categoryColors[m.category] || '#3b82f6', m.priority, m.status)}
                   eventHandlers={{
                     click: () => onSelectComplaint(complaints.find(c => c.id === m.id))
                   }}
                 >
-                  <Popup>
-                    <strong>{m.title}</strong><br />
-                    {m.category}<br />
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ fontSize: '10px', padding: '2px 8px', marginTop: '5px' }}
-                      onClick={() => onSelectComplaint(complaints.find(c => c.id === m.id))}
-                    >
-                      View Full Details
-                    </button>
+                  <Popup className="custom-popup">
+                    <div style={{ padding: '4px' }}>
+                      <div className="flex justify-between items-center mb-2" style={{ gap: '10px' }}>
+                        <span className={`status-badge status-${(m.status || 'pending').toLowerCase().replace(/\s+/g, '')}`} style={{ fontSize: '10px' }}>
+                          {m.status}
+                        </span>
+                        <span style={{ fontSize: '10px', fontWeight: 800, color: m.priority === 'Urgent' ? 'var(--danger)' : 'var(--text-muted)' }}>
+                          {m.priority}
+                        </span>
+                      </div>
+                      <strong style={{ display: 'block', fontSize: '14px', marginBottom: '4px' }}>{m.title}</strong>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                        Category: <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{m.category}</span>
+                      </div>
+                      <button 
+                        className="btn-premium" 
+                        style={{ width: '100%', fontSize: '11px', padding: '6px 12px', borderRadius: '8px' }}
+                        onClick={() => onSelectComplaint(complaints.find(c => c.id === m.id))}
+                      >
+                        <Eye size={14} />
+                        View Full Details
+                      </button>
+                    </div>
                   </Popup>
                 </Marker>
               ))}
@@ -120,11 +176,12 @@ const MapsGrid = ({ complaints, onSelectComplaint, view = 'both', userRole, ward
         <div className="card">
           <h3 className="mb-4" style={{ fontSize: '1rem', fontWeight: 700 }}>Complaints Heatmap (Density View)</h3>
           <div className="map-container">
-            <MapContainer key={`heat-${center[0]}-${center[1]}`} center={center} zoom={12} style={{ height: '100%', width: '100%' }}>
+            <MapContainer key="fixed-heat-map" center={defaultCenter} zoom={6} maxZoom={19} style={{ height: '100%', width: '100%' }}>
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
+              <FlyToLocation complaint={selectedComplaint} />
               {/* For a real heatmap, we'd use Leaflet.heat, but for now we'll show circles as density */}
               {markers.map(m => (
                 <CircleMarker 

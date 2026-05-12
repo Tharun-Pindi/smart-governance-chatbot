@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+const { logEmitter, getLogs, info, success, error: logError } = require('./services/logService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -28,6 +29,35 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/broadcast', require('./routes/broadcast'));
 app.use('/api/webhooks', require('./routes/webhooks'));
+
+// --- Real-time System Logs (SSE) ---
+app.get('/api/logs/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    // Send existing logs first
+    const existingLogs = getLogs();
+    existingLogs.forEach(l => {
+        res.write(`data: ${JSON.stringify(l)}\n\n`);
+    });
+
+    const logHandler = (logEntry) => {
+        res.write(`data: ${JSON.stringify(logEntry)}\n\n`);
+    };
+
+    logEmitter.on('new-log', logHandler);
+
+    req.on('close', () => {
+        logEmitter.off('new-log', logHandler);
+        res.end();
+    });
+});
+
+app.get('/api/logs', (req, res) => {
+    res.json(getLogs());
+});
 
 app.get('/api/stats', async (req, res) => {
   try {
@@ -151,8 +181,8 @@ try {
 }
 
 const server = app.listen(PORT, () => {
-  console.log(`🚀 Smart Governance Server is running on port ${PORT}`);
-  console.log(`📅 Startup Time: ${new Date().toLocaleString()}`);
+  success(`Server started on port ${PORT}`);
+  info(`Startup Time: ${new Date().toLocaleString()}`);
 });
 
 // Graceful shutdown

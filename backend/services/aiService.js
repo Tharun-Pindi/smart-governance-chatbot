@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { info, success, error: logError, warn } = require('./logService');
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -18,10 +19,10 @@ const classifyComplaint = async (description) => {
       TASK:
       1. Translate to English if it's in another language.
       2. Classify into one of these categories: Utilities, Infrastructure, Sanitation, Public Safety, Health & Education, Environment, or Other.
-      3. Determine Priority (Low, Medium, High, Urgent).
+      3. Determine Priority (Low, Medium, High, Urgent). CRITICAL: If the description contains words like "urgent", "help", "sos", "emergency", or "compulsary", set priority to "Urgent" or "High".
       4. Assign to a logical Government Department from this EXACT list ONLY: "Water & Sewage", "Public Safety", "Electricity", "Infrastructure", or "Other".
       5. Generate a professional English summary.
-      6. Extract key tags (e.g., #waterleak, #pothole).
+      6. Extract key tags (e.g., #waterleak, #pothole, #emergency).
 
       Complaint: "${description}"
 
@@ -46,8 +47,10 @@ const classifyComplaint = async (description) => {
             const result = await model.generateContent(prompt);
             const response = await result.response;
             text = response.text();
+            success(`AI: Successfully classified complaint using ${modelName}`);
             break;
         } catch (err) {
+            warn(`AI: ${modelName} failed/overloaded, trying next...`);
             if (err.status === 503 || err.message.includes('503')) continue;
             throw err;
         }
@@ -154,10 +157,10 @@ const analyzeAndCheckDuplicate = async (complaintData, recentIssues) => {
       TASK:
       1. Translate to English if it's in another language.
       2. Classify into one of these categories: "Water Supply", "Electricity", "Drainage & Sewage", "Roads & Infrastructure", "Sanitation & Garbage", "Street Lights", "Public Safety", "Health & Education", or "Other".
-      3. Determine Priority (Low, Medium, High, Urgent).
+      3. Determine Priority (Low, Medium, High, Urgent). CRITICAL: If the description contains words like "urgent", "help", "sos", "emergency", or "compulsary", you MUST set priority to "Urgent" or "High".
       4. Assign to a logical Government Department from this list: "Water Department", "Electricity Board", "Roads & Buildings (R&B)", "Municipal Corporation (GHMC/GVMC)", "Public Health Dept", "Police Department", or "Other".
       5. Generate a professional English summary.
-      6. Extract key tags (e.g., #waterleak, #pothole, #powercut).
+      6. Extract key tags (e.g., #waterleak, #pothole, #powercut, #emergency).
 
       New Complaint to Analyze: 
       "Description: ${complaintData.description}"

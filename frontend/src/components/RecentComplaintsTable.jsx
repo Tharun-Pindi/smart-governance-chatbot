@@ -36,7 +36,7 @@ const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onVie
           <tbody>
             {complaints.slice(0, 3).map((c) => (
               <tr key={c.id}>
-                <td style={{ fontWeight: 600 }}>SG-{c.id ? c.id.substring(0, 4) : '####'}</td>
+                <td style={{ fontWeight: 600 }}>SG-{String(c.id || '').substring(0, 8).toUpperCase()}</td>
                 <td>
                   {c.media_url ? (
                     <div 

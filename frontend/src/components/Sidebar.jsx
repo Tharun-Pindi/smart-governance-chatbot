@@ -14,7 +14,8 @@ import {
   ChevronRight,
   Landmark,
   LogOut,
-  Megaphone
+  Megaphone,
+  Terminal
 } from 'lucide-react';
 
 const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber = '5' }) => {
@@ -29,6 +30,7 @@ const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'logs', label: 'System Logs', icon: Terminal },
     { id: 'feedback', label: 'Feedback', icon: HelpCircle },
   ];
 
