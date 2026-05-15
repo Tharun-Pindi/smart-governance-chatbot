@@ -18,7 +18,7 @@ import {
   Terminal
 } from 'lucide-react';
 
-const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber = '5' }) => {
+const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber = '5', complaints = [] }) => {
   const superAdminMenuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'complaints', label: 'Complaints', icon: MessageSquare, hasSub: true },
@@ -31,7 +31,7 @@ const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'settings', label: 'Settings', icon: Settings },
     { id: 'logs', label: 'System Logs', icon: Terminal },
-    { id: 'feedback', label: 'Feedback', icon: HelpCircle },
+    { id: 'feedback', label: 'Feedback Hub', icon: HelpCircle, badge: complaints.filter(c => c.rating >= 4).length },
   ];
 
   const wardAdminMenuItems = [
@@ -45,7 +45,7 @@ const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber
     { id: 'reports', label: 'Reports', icon: BarChart3 },
     { id: 'alerts', label: 'Alerts', icon: Bell },
     { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'feedback', label: 'Feedback', icon: HelpCircle },
+    { id: 'feedback', label: 'Feedback Hub', icon: HelpCircle, badge: complaints.filter(c => c.rating >= 4).length },
   ];
 
   const menuItems = userRole === 'ward_admin' ? wardAdminMenuItems : superAdminMenuItems;
@@ -63,18 +63,35 @@ const Sidebar = ({ activeTab, setActiveTab, userRole = 'super_admin', wardNumber
           </div>
         </div>
 
-
-
         <nav className="sidebar-nav" style={{ flex: 'none' }}>
         {menuItems.map((item) => (
           <div 
             key={item.id}
-            className={`nav-item ${activeTab === item.id && item.id !== 'feedback' ? 'active' : ''}`}
-            style={item.id === 'feedback' ? { background: '#3b82f6', color: 'white', marginTop: '1rem' } : {}}
+            className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
             onClick={() => setActiveTab(item.id)}
+            style={item.id === 'feedback' ? { marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' } : {}}
           >
-            <item.icon size={20} />
-            <span style={{ flex: 1 }}>{item.label}</span>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <item.icon size={20} />
+                {item.badge > 0 && (
+                    <span style={{ 
+                        position: 'absolute', 
+                        top: '-8px', 
+                        right: '-8px', 
+                        background: '#ef4444', 
+                        color: 'white', 
+                        fontSize: '0.65rem', 
+                        padding: '2px 5px', 
+                        borderRadius: '10px', 
+                        fontWeight: 800,
+                        border: '2px solid var(--sidebar-bg)',
+                        boxShadow: '0 0 10px rgba(239, 68, 68, 0.4)'
+                    }}>
+                        {item.badge}
+                    </span>
+                )}
+            </div>
+            <span style={{ flex: 1, marginLeft: '12px' }}>{item.label}</span>
             {item.hasSub && <ChevronRight size={14} opacity={0.5} />}
           </div>
         ))}

@@ -4,26 +4,39 @@ const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+// Privileged client for admin management (bypasses RLS)
+const supabaseAdmin = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY);
 const { info, success, error: logError } = require('../services/logService');
 
 // In-memory OTP storage (In production, use Redis)
 const otpStore = new Map();
 
 router.post('/send-otp', async (req, res) => {
-  const { phone, name } = req.body;
+  let { phone, name } = req.body;
   if (!phone || !name) return res.status(400).json({ error: 'Name and Phone are required' });
+
+  // Clean inputs for robustness
+  phone = phone.replace(/\s+/g, '');
+  name = name.trim();
 
   try {
     // 1. Verify if phone number and name belong to an admin in Supabase
     let admin = null;
-    const { data: admins, error } = await supabase.from('admins').select('*').eq('phone', phone).single();
+    let { data: admins, error } = await supabaseAdmin.from('admins').select('*').eq('phone', phone).single();
     
-    if (error || !admins) {
+    // Fallback: Try with/without +91 prefix if not found
+    if (!admins) {
+        const altPhone = phone.startsWith('+91') ? phone.replace('+91', '') : `+91${phone}`;
+        const { data: altAdmins } = await supabaseAdmin.from('admins').select('*').eq('phone', altPhone).single();
+        if (altAdmins) admins = altAdmins;
+    }
+
+    if (!admins) {
       // Fallback mocks for testing if table isn't created yet
       if (phone === '+919876543210' || phone === '9876543210') {
-        admin = { name: 'Tharun Pindi', phone, role: 'super_admin', ward_number: null };
+        admin = { name: 'Tharun Pindi', phone, role: 'super_admin', ward: null };
       } else if (phone === '+919876543211' || phone === '9876543211') {
-        admin = { name: 'Ward Admin', phone, role: 'ward_admin', ward_number: '5' };
+        admin = { name: 'Ward Admin', phone, role: 'ward_admin', ward: '5' };
       } else {
         return res.status(401).json({ error: 'Unregistered details. Access denied.' });
       }
@@ -31,13 +44,21 @@ router.post('/send-otp', async (req, res) => {
       admin = admins;
     }
 
-    // Verify Name (Case-insensitive check for better UX)
-    if (admin.name.toLowerCase() !== name.toLowerCase()) {
+    // Verify Name (Case-insensitive check for better UX - allowing partial matches)
+    const storedName = admin.name.toLowerCase();
+    const inputName = name.toLowerCase();
+    
+    if (!storedName.includes(inputName) && !inputName.includes(storedName)) {
+       console.warn(`[AUTH] Name mismatch: Input "${name}" vs Stored "${admin.name}"`);
        return res.status(401).json({ error: 'Name does not match our records for this number.' });
     }
 
     // 2. Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log(`\n**************************************************`);
+    console.log(`[AUTH] LOGIN ATTEMPT: ${name} (${phone})`);
+    console.log(`[AUTH] GENERATED OTP: ${otp}`);
+    console.log(`**************************************************\n`);
     
     // Store OTP with 5-minute expiry, tied to the admin profile
     otpStore.set(phone, { otp, expires: Date.now() + 5 * 60000, admin });
@@ -64,8 +85,14 @@ router.post('/send-otp', async (req, res) => {
 });
 
 router.post('/verify-otp', async (req, res) => {
-  const { phone, otp } = req.body;
+  let { phone, otp } = req.body;
   if (!phone || !otp) return res.status(400).json({ error: 'Phone and OTP are required' });
+
+  // Clean phone number for matching
+  phone = phone.replace(/\s+/g, '');
+
+  console.log(`[AUTH] Verifying OTP for ${phone}: ${otp}`);
+  otp = otp.trim();
 
   const record = otpStore.get(phone);
   if (!record) {
@@ -85,7 +112,7 @@ router.post('/verify-otp', async (req, res) => {
       user: {
         name: record.admin.name,
         role: record.admin.role,
-        wardNumber: record.admin.ward_number,
+        wardNumber: record.admin.ward,
         photo_url: record.admin.photo_url
       }
     });
@@ -97,7 +124,7 @@ router.post('/verify-otp', async (req, res) => {
 // --- Admin Management ---
 router.get('/admins', async (req, res) => {
   try {
-    const { data, error } = await supabase.from('admins').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabaseAdmin.from('admins').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     res.json(data);
   } catch (error) {
@@ -110,8 +137,8 @@ router.post('/admins', async (req, res) => {
   if (!name || !phone) return res.status(400).json({ error: 'Name and Phone are required' });
 
   try {
-    console.log('Attempting to create admin:', { name, phone, role, ward });
-    const { data, error } = await supabase
+    console.log('Attempting to create admin (using Master Key):', { name, phone, role, ward });
+    const { data, error } = await supabaseAdmin
       .from('admins')
       .insert([{ 
         name, 
@@ -140,7 +167,7 @@ router.post('/admins', async (req, res) => {
 
 router.delete('/admins/:id', async (req, res) => {
   try {
-    const { error } = await supabase.from('admins').delete().eq('id', req.params.id);
+    const { error } = await supabaseAdmin.from('admins').delete().eq('id', req.params.id);
     if (error) throw error;
     res.json({ message: 'Admin deleted successfully' });
   } catch (error) {
@@ -177,7 +204,7 @@ router.post('/update-profile', async (req, res) => {
     const updateData = { name: name };
     if (photo_url) updateData.photo_url = photo_url;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('admins')
       .update(updateData)
       .eq('phone', phone)

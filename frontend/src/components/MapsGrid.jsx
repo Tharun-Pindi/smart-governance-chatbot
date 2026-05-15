@@ -36,35 +36,131 @@ const FlyToLocation = ({ complaint }) => {
   return null;
 };
 
+const WARD_CENTERS = {
+  '1': [17.0005, 81.7700],
+  '2': [17.0010, 81.7750],
+  '3': [17.0020, 81.7800],
+  '4': [17.0030, 81.7850],
+  '5': [17.0040, 81.7900],
+  '6': [17.0067, 81.7847], 
+  '7': [17.0100, 81.7900],
+  '8': [17.0150, 81.7950],
+  '9': [17.0200, 81.8000],
+  '10': [17.0250, 81.8050],
+  '11': [17.0280, 81.8080],
+  '12': [17.0310, 81.8110],
+  '13': [17.0340, 81.8140],
+  '14': [17.0370, 81.8170],
+  '15': [17.0400, 81.8200],
+};
+
+const FlyToMarkers = ({ markers, wardNumber, defaultCenter }) => {
+  const map = useMap();
+  const prevWardRef = React.useRef(null);
+  
+  React.useEffect(() => {
+    // Basic recalculation to prevent gray tiles on resize/remount
+    setTimeout(() => {
+      map.invalidateSize();
+    }, 100);
+
+    // Prevent map from "snapping back" when user pans/zooms or data polls
+    if (prevWardRef.current === wardNumber && map.getZoom() !== undefined) {
+      return; 
+    }
+    prevWardRef.current = wardNumber;
+
+    if (markers && markers.length > 0) {
+      const validMarkers = markers.filter(m => m.lat !== 0 && m.lng !== 0);
+      if (validMarkers.length === 1) {
+        // If only one pin, just set the view directly to a moderate zoom (13) to avoid heavy zooming
+        map.setView([validMarkers[0].lat, validMarkers[0].lng], 13, { animate: false });
+      } else if (validMarkers.length > 1) {
+        // If multiple pins, fit them in view, but restrict maxZoom to 13 to avoid heavy zooming
+        const bounds = L.latLngBounds(validMarkers.map(m => [m.lat, m.lng]));
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13, animate: false });
+      }
+    } else {
+      // Instantly go to ward center, no flying, moderate zoom
+      const target = wardNumber 
+        ? (WARD_CENTERS[wardNumber] || [17.01 + (parseInt(wardNumber) * 0.001), 81.78 + (parseInt(wardNumber) * 0.001)]) 
+        : defaultCenter;
+      
+      map.setView(target, wardNumber ? 13 : 7, { animate: false });
+    }
+  }, [markers, map, wardNumber, defaultCenter]);
+  
+  return null;
+};
+
+
+
 
 
 const MapsGrid = ({ complaints, onSelectComplaint, selectedComplaint, view = 'both', userRole, wardNumber }) => {
   const defaultCenter = [17.2, 80.1]; // Regional view covering Hyderabad to Rajahmundry
 
+  // --- Robust Coordinate Parsing ---
   const markers = complaints
-    .filter(c => typeof c.location === 'string' && c.location.includes(','))
     .map(c => {
-      try {
-        const parts = c.location.split(',').map(p => parseFloat(p.trim()));
-        if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-          return { 
-            id: c.id, 
-            lat: parts[0], 
-            lng: parts[1], 
-            title: c.title || c.category || 'Untitled Report', 
-            category: c.category || 'Other',
-            status: c.status || 'Pending',
-            priority: c.priority || 'Medium'
-          };
+      let lat = null, lng = null;
+      
+      // 1. Try to parse from location string "lat,lng"
+      if (typeof c.location === 'string' && c.location.includes(',')) {
+        try {
+          const parts = c.location.split(',').map(p => parseFloat(p.trim()));
+          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            lat = parts[0];
+            lng = parts[1];
+          }
+        } catch (e) {
+          console.error("Error parsing location:", c.location, e);
         }
-      } catch (e) {
-        console.error("Error parsing location:", c.location, e);
       }
-      return null;
+
+      // 2. Fallback to ward center if location is missing or invalid
+      if (lat === null || lng === null) {
+        const rawWard = c.ward ? String(c.ward).replace(/\D/g, '') : null;
+        if (rawWard && rawWard.length > 0) {
+          const fallback = WARD_CENTERS[rawWard] || [17.01 + (parseInt(rawWard) * 0.001), 81.78 + (parseInt(rawWard) * 0.001)];
+          lat = fallback[0];
+          lng = fallback[1];
+        } else {
+          return null; // Skip markers without location or ward
+        }
+      }
+
+      // Final check to prevent NaN
+      if (isNaN(lat) || isNaN(lng)) return null;
+
+      return { 
+        id: c.id, 
+        lat, 
+        lng, 
+        title: c.title || c.category || 'Untitled Report', 
+        category: c.category || 'Other',
+        status: c.status || 'Pending',
+        priority: c.priority || 'Medium'
+      };
     })
     .filter(m => m !== null);
 
-  const center = markers.length > 0 ? [markers[0].lat, markers[0].lng] : defaultCenter;
+  // --- Safe Center Calculation ---
+  const getSafeCenter = () => {
+    if (markers.length > 0) return [markers[0].lat, markers[0].lng];
+    
+    const cleanWard = wardNumber ? String(wardNumber).replace(/\D/g, '') : '';
+    if (cleanWard && WARD_CENTERS[cleanWard]) return WARD_CENTERS[cleanWard];
+    
+    if (cleanWard) {
+        const val = parseInt(cleanWard);
+        if (!isNaN(val)) return [17.01 + (val * 0.001), 81.78 + (val * 0.001)];
+    }
+    
+    return defaultCenter;
+  };
+
+  const center = getSafeCenter();
 
   const showLive = view === 'both' || view === 'live';
   const showHeatmap = view === 'both' || view === 'heatmap';
@@ -78,22 +174,18 @@ const MapsGrid = ({ complaints, onSelectComplaint, selectedComplaint, view = 'bo
 
   const createCustomIcon = (color, priority, status) => {
     const isUrgent = priority === 'Urgent' || priority === 'High';
-    const isPending = status === 'Pending';
     
     return L.divIcon({
       className: `custom-marker-icon ${isUrgent ? 'marker-pin-urgent' : ''}`,
       html: `
-        <div class="custom-marker-container">
-          <div class="marker-pin-outer" style="background-color: ${color};">
-            <div class="marker-pin-inner"></div>
-          </div>
-          <div class="marker-shadow"></div>
-          ${isUrgent ? '<div class="marker-pulse-ring"></div>' : ''}
+        <div class="custom-marker-container" style="display: flex; flex-direction: column; align-items: center;">
+          <div style="font-size: 32px; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.3)); transform: translateY(-10px);">📍</div>
+          ${isUrgent ? '<div class="marker-pulse-ring" style="top: 15px; width: 30px; height: 30px;"></div>' : ''}
         </div>
       `,
-      iconSize: [32, 40],
-      iconAnchor: [16, 40],
-      popupAnchor: [0, -36]
+      iconSize: [40, 40],
+      iconAnchor: [20, 35],
+      popupAnchor: [0, -35]
     });
   };
 
@@ -106,12 +198,18 @@ const MapsGrid = ({ complaints, onSelectComplaint, selectedComplaint, view = 'bo
             {userRole === 'ward_admin' ? `Ward Map (Ward ${wardNumber})` : 'Live Complaints Map'}
           </h3>
           <div className="map-container">
-            <MapContainer key="fixed-live-map" center={defaultCenter} zoom={6} maxZoom={19} style={{ height: '100%', width: '100%' }}>
+            <MapContainer 
+              center={center} 
+              zoom={wardNumber ? 14 : 6} 
+              maxZoom={19} 
+              style={{ height: '350px', width: '100%' }}
+            >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
               <FlyToLocation complaint={selectedComplaint} />
+              <FlyToMarkers markers={markers} wardNumber={wardNumber} defaultCenter={defaultCenter} />
               {markers.map(m => (
                 <Marker 
                   key={m.id} 
@@ -176,16 +274,22 @@ const MapsGrid = ({ complaints, onSelectComplaint, selectedComplaint, view = 'bo
         <div className="card">
           <h3 className="mb-4" style={{ fontSize: '1rem', fontWeight: 700 }}>Complaints Heatmap (Density View)</h3>
           <div className="map-container">
-            <MapContainer key="fixed-heat-map" center={defaultCenter} zoom={6} maxZoom={19} style={{ height: '100%', width: '100%' }}>
+            <MapContainer 
+              center={center} 
+              zoom={wardNumber ? 14 : 6} 
+              maxZoom={19} 
+              style={{ height: '350px', width: '100%' }}
+            >
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
               <FlyToLocation complaint={selectedComplaint} />
+              <FlyToMarkers markers={markers} wardNumber={wardNumber} defaultCenter={defaultCenter} />
               {/* For a real heatmap, we'd use Leaflet.heat, but for now we'll show circles as density */}
               {markers.map(m => (
                 <CircleMarker 
-                  key={m.id} 
+                  key={`heat-${m.id}`} 
                   center={[m.lat, m.lng]} 
                   radius={20} 
                   pathOptions={{ fillColor: 'red', color: 'transparent', fillOpacity: 0.2 }} 

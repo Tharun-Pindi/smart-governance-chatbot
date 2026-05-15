@@ -1,7 +1,13 @@
-import React from 'react';
-import { X, MapPin, Tag, Clock, User, MessageSquare, Shield, CheckCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, MapPin, Tag, Clock, User, MessageSquare, Shield, CheckCircle, Camera } from 'lucide-react';
+import MediaRenderer from './MediaRenderer';
 
 const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
+  const [isResolving, setIsResolving] = useState(false);
+  const [resolutionMessage, setResolutionMessage] = useState('');
+  const [resolutionMedia, setResolutionMedia] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   if (!complaint) return null;
 
   const statusColors = {
@@ -88,7 +94,13 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
               ) : (
                 <select 
                   value={status} 
-                  onChange={(e) => onUpdateStatus(complaint.id, e.target.value)}
+                  onChange={(e) => {
+                    if (e.target.value === 'Resolved') {
+                      setIsResolving(true);
+                    } else {
+                      onUpdateStatus(complaint.id, e.target.value);
+                    }
+                  }}
                   style={{
                     padding: '0.5rem 1rem',
                     borderRadius: '0.5rem',
@@ -107,6 +119,82 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
             </div>
           </div>
 
+          {isResolving && (
+            <div className="resolution-form animate-fade-in" style={{ background: '#f8fafc', padding: '1.5rem', borderRadius: '1rem', marginBottom: '2rem', border: '1px solid #cbd5e1' }}>
+              <h3 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1rem', color: '#1e293b' }}>Resolve Complaint</h3>
+              
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: '#475569' }}>
+                Resolution Message (Sent to Citizen)
+              </label>
+              <textarea 
+                value={resolutionMessage}
+                onChange={(e) => setResolutionMessage(e.target.value)}
+                placeholder="Explain what actions were taken to resolve this issue..."
+                style={{ width: '100%', padding: '0.875rem', borderRadius: '0.5rem', border: '1px solid #cbd5e1', marginBottom: '1rem', minHeight: '100px', outline: 'none' }}
+              />
+
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: '#475569' }}>
+                Proof of Resolution (Optional Photo/Video)
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+                <label style={{ 
+                  display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', 
+                  background: 'white', border: '1px dashed #cbd5e1', borderRadius: '0.5rem', cursor: 'pointer',
+                  fontWeight: 600, color: '#64748b'
+                }}>
+                  <Camera size={18} />
+                  {resolutionMedia ? 'Change Media' : 'Upload Media'}
+                  <input 
+                    type="file" 
+                    accept="image/*,video/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => setResolutionMedia(reader.result);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                </label>
+                {resolutionMedia && (
+                  <span style={{ fontSize: '0.875rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <CheckCircle size={16} /> Media attached
+                  </span>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={async () => {
+                    setIsSubmitting(true);
+                    await onUpdateStatus(complaint.id, 'Resolved', { message: resolutionMessage, mediaUrl: resolutionMedia });
+                    setIsSubmitting(false);
+                    setIsResolving(false);
+                  }}
+                  disabled={isSubmitting}
+                  style={{ 
+                    padding: '0.75rem 1.5rem', background: '#10b981', color: 'white', borderRadius: '0.5rem', 
+                    fontWeight: 700, border: 'none', cursor: isSubmitting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' 
+                  }}
+                >
+                  {isSubmitting ? 'Resolving...' : 'Submit Resolution'}
+                </button>
+                <button 
+                  onClick={() => setIsResolving(false)}
+                  disabled={isSubmitting}
+                  style={{ 
+                    padding: '0.75rem 1.5rem', background: 'transparent', color: '#64748b', borderRadius: '0.5rem', 
+                    fontWeight: 600, border: '1px solid #cbd5e1', cursor: 'pointer' 
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-2 gap-8 mb-8">
             <div className="detail-item">
               <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
@@ -118,21 +206,35 @@ const ComplaintModal = ({ complaint, onClose, onUpdateStatus }) => {
                 Media Evidence / అప్‌లోడ్ చేసిన ఫోటో
               </label>
               {complaint.media_url ? (
-                <a href={complaint.media_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', cursor: 'zoom-in' }}>
-                  <div style={{ position: 'relative', borderRadius: '1rem', overflow: 'hidden', border: '1px solid var(--border-color)', background: '#f8fafc', boxShadow: 'var(--shadow-sm)' }}>
-                    <img 
-                      src={complaint.media_url} 
-                      alt="Evidence" 
-                      style={{ width: '100%', maxHeight: '250px', objectFit: 'cover', display: 'block' }}
-                    />
-                    <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.5rem', fontSize: '0.65rem' }}>
-                      Click to expand
-                    </div>
+                <div style={{ position: 'relative', borderRadius: '1rem', overflow: 'hidden', border: '1px solid var(--border-color)', background: '#f8fafc', boxShadow: 'var(--shadow-sm)' }}>
+                  <MediaRenderer 
+                    url={complaint.media_url} 
+                    alt="Evidence" 
+                  />
+                  <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.5rem', fontSize: '0.65rem' }}>
+                    Citizen Proof
                   </div>
-                </a>
+                </div>
               ) : (
                 <div style={{ padding: '2rem', background: '#f1f5f9', borderRadius: '1rem', textAlign: 'center', color: '#64748b', border: '2px dashed #cbd5e1' }}>
                   <p style={{ fontSize: '0.75rem', fontWeight: 500 }}>No photo uploaded</p>
+                </div>
+              )}
+
+              {status === 'Resolved' && complaint.resolution_media_url && (
+                <div style={{ marginTop: '2rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#10b981', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                    Resolution Proof / పరిష్కారం ఫోటో
+                  </label>
+                  <div style={{ position: 'relative', borderRadius: '1rem', overflow: 'hidden', border: '1px solid #10b981', background: '#ecfdf5', boxShadow: 'var(--shadow-sm)' }}>
+                    <MediaRenderer 
+                      url={complaint.resolution_media_url} 
+                      alt="Resolution Proof" 
+                    />
+                    <div style={{ position: 'absolute', top: '0.5rem', right: '0.5rem', background: '#10b981', color: 'white', padding: '0.25rem 0.5rem', borderRadius: '0.5rem', fontSize: '0.65rem', fontWeight: 'bold' }}>
+                      Official Proof
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

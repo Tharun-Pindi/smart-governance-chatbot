@@ -62,6 +62,27 @@ router.post('/', async (req, res) => {
   try {
     const { title, description, citizen_id, citizen_name, ward, location, address, is_emergency, media_url, status, category } = req.body;
 
+    // --- ENFORCE COMPLAINT QUOTA (Max 5 Active) ---
+    if (citizen_id && citizen_id !== 'anonymous') {
+      const { count, error: countError } = await supabase
+        .from('complaints')
+        .select('*', { count: 'exact', head: true })
+        .eq('citizen_id', citizen_id)
+        .not('status', 'eq', 'Resolved')
+        .not('status', 'eq', 'Solved');
+
+      if (countError) {
+        console.error('⚠️ [QUOTA] Error checking quota:', countError.message);
+      } else if (count >= 5) {
+        console.warn(`🚫 [QUOTA] User ${citizen_id} reached limit (${count} active)`);
+        return res.status(400).json({ 
+          error: 'Complaint Quota Reached', 
+          message: 'You have reached the maximum limit of 5 active complaints. Please wait for an administrator to resolve your existing complaints.',
+          telugu_message: 'మీరు 5 చురుకైన ఫిర్యాదుల గరిష్ట పరిమితిని చేరుకున్నారు. దయచేసి అడ్మినిస్ట్రేటర్ మీ ప్రస్తుత ఫిర్యాదులను పరిష్కరించే వరకు వేచి ఉండండి.'
+        });
+      }
+    }
+
     if (!description) {
       return res.status(400).json({ error: 'Description is required' });
     }
@@ -69,17 +90,17 @@ router.post('/', async (req, res) => {
     let finalMediaUrl = null;
     if (media_url) {
       if (media_url.startsWith('data:')) {
-        console.log('📦 [MEDIA] Uploading base64 payload to Cloudinary...');
+        info('📦 [MEDIA] Uploading base64 payload to Cloudinary...');
         try {
           const uploadedUrl = await uploadBase64(media_url);
           if (uploadedUrl) {
             finalMediaUrl = uploadedUrl;
-            console.log('✅ [MEDIA] Cloudinary Upload Success:', finalMediaUrl);
+            success('✅ [MEDIA] Cloudinary Upload Success: ' + finalMediaUrl);
           } else {
-            console.warn('⚠️ [MEDIA] Cloudinary upload failed, but continuing without image to prevent DB overflow.');
+            warn('⚠️ [MEDIA] Cloudinary upload returned null, continuing without media.');
           }
         } catch (uploadErr) {
-          console.error('❌ [MEDIA] Cloudinary Error:', uploadErr.message);
+          logError('❌ [MEDIA] Cloudinary Error: ' + uploadErr.message);
         }
       } else {
         finalMediaUrl = media_url;
@@ -93,6 +114,7 @@ router.post('/', async (req, res) => {
       .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
     // 2. Use AI to classify the complaint
+    info('🧠 [AI] Analyzing complaint description for classification...');
     const aiResult = await analyzeAndCheckDuplicate({ description, address }, []);
 
     // 2.1 Early Keyword Detection (Failsafe for SOS/Urgent)
@@ -103,6 +125,7 @@ router.post('/', async (req, res) => {
     
     if (hasEmergencyKeyword) {
       aiResult.priority = "Urgent";
+      info('🚨 [PRIORITY] Emergency keyword detected! Escalating to Urgent.');
     }
 
 
@@ -138,13 +161,14 @@ router.post('/', async (req, res) => {
       insertPayload.citizen_name = citizen_name;
     }
 
+    info(`💾 [DB] Saving complaint ${smartId} to Supabase...`);
     let { data, error } = await supabase
       .from('complaints')
       .insert([insertPayload])
       .select();
 
     if (error) {
-      console.warn('⚠️ [DB] Insert failed:', error.message);
+      warn('⚠️ [DB] Insert failed: ' + error.message);
       
       // Automatic Fallback: Identify missing column from various error formats
       const pgRegex = /column "(.+)" does not exist/;
@@ -154,7 +178,7 @@ router.post('/', async (req, res) => {
       
       if (missingColumnMatch) {
         const missingCol = missingColumnMatch[1];
-        console.log(`🧹 Auto-healing: Removing missing column "${missingCol}" and retrying...`);
+        info(`🧹 Auto-healing: Removing missing column "${missingCol}" and retrying...`);
         
         // Append missing data to description so it's not lost
         if (insertPayload[missingCol]) {
@@ -169,35 +193,15 @@ router.post('/', async (req, res) => {
         
         data = retry.data;
         error = retry.error;
-        
-        // Recursive check in case multiple columns are missing
-        if (error && (error.message.includes('does not exist') || error.message.includes('schema cache'))) {
-            const missingCol2Match = error.message.match(pgRegex) || error.message.match(restRegex);
-            if (missingCol2Match) {
-                const missingCol2 = missingCol2Match[1];
-                console.log(`🧹 Auto-healing: Also removing "${missingCol2}"`);
-                if (insertPayload[missingCol2]) {
-                    insertPayload.description = `[${missingCol2}: ${insertPayload[missingCol2]}]\n${insertPayload.description}`;
-                }
-                delete insertPayload[missingCol2];
-                const retry2 = await supabase.from('complaints').insert([insertPayload]).select();
-                data = retry2.data;
-                error = retry2.error;
-            }
-        }
       }
     }
 
     if (error) {
-      console.error('Supabase Insert Error:', error);
+      logError('Supabase Insert Error: ' + error.message, { error });
       throw error;
     }
 
-    // console.log("=========================================");
-    // console.log(`🚀 SUCCESS: Complaint stored in Supabase!`);
-    // console.log(`ID: ${data[0].id}`);
-    // console.log(`Category: ${aiResult.category}`);
-    // console.log("=========================================");
+    success(`🚀 SUCCESS: Complaint ${smartId} stored and classified as ${aiResult.category}`);
 
     // 4. Handle Notifications (Multi-channel)
     if (data[0]) {
@@ -224,16 +228,18 @@ router.post('/', async (req, res) => {
       
       // Notify the citizen
       if (recipientEmail || recipientPhone) {
+        info(`🔔 [NOTIFY] Dispatching updates to citizen ${recipientEmail || recipientPhone}`);
         notifyCitizen('update', recipientEmail, recipientPhone, complaint).catch(err => {
-          console.error("Citizen notification error:", err.message);
+          logError("Citizen notification error: " + err.message);
         });
       }
 
       // Notify the admin/system if it's an emergency or as a log
       if (is_emergency && adminPhone) {
+        info('🚨 [EMERGENCY] Triggering voice alert to system administrator...');
         const sosText = `Emergency alert from Smart Governance System. A citizen has triggered an S.O.S. at location ${location || address}. Immediate response required.`;
         sendVoiceAlert(adminPhone, sosText).catch(err => {
-          console.error("Background voice alert error:", err.message);
+          logError("Background voice alert error: " + err.message);
         });
       }
     }
@@ -245,7 +251,7 @@ router.post('/', async (req, res) => {
       ai_analysis: aiResult 
     });
   } catch (error) {
-    console.error('DETAILED ERROR submitting complaint:', error);
+    logError('DETAILED ERROR submitting complaint: ' + error.message, { stack: error.stack });
     res.status(500).json({ error: 'Failed to submit complaint', details: error.message });
   }
 });
@@ -315,7 +321,7 @@ router.get('/:id', async (req, res) => {
 // Update complaint status (Official)
 router.put('/:id/status', async (req, res) => {
   try {
-    const { status } = req.body;
+    const { status, resolution_message, resolution_media_url } = req.body;
 
     // First check if the complaint is already resolved
     const { data: currentComplaint, error: fetchError } = await supabase
@@ -333,9 +339,35 @@ router.put('/:id/status', async (req, res) => {
       });
     }
 
+    let finalResolutionMediaUrl = null;
+    if (resolution_media_url) {
+      if (resolution_media_url.startsWith('data:')) {
+        console.log('📦 [MEDIA] Uploading resolution base64 to Cloudinary...');
+        try {
+          const uploadedUrl = await uploadBase64(resolution_media_url);
+          if (uploadedUrl) {
+            finalResolutionMediaUrl = uploadedUrl;
+            console.log('✅ [MEDIA] Cloudinary Upload Success:', finalResolutionMediaUrl);
+          }
+        } catch (uploadErr) {
+          console.error('❌ [MEDIA] Cloudinary Error:', uploadErr.message);
+        }
+      } else {
+        finalResolutionMediaUrl = resolution_media_url;
+      }
+    }
+
+    const updatePayload = { status };
+    if (status === 'Resolved' || status === 'Solved') {
+        updatePayload.resolved_at = new Date().toISOString();
+        if (finalResolutionMediaUrl) {
+            updatePayload.resolution_media_url = finalResolutionMediaUrl;
+        }
+    }
+
     const { data, error } = await supabase
       .from('complaints')
-      .update({ status })
+      .update(updatePayload)
       .eq('id', req.params.id)
       .select();
 
@@ -350,6 +382,11 @@ router.put('/:id/status', async (req, res) => {
       const { notifyCitizen } = require('../services/notificationService');
 
       if (citizenId && citizenId !== 'anonymous') {
+        // Pass resolution details to notification service (by adding them to complaint object dynamically)
+        if (resolution_message) {
+            complaint.resolution_message = resolution_message;
+        }
+        
         const cleanCitizenId = citizenId.split('@')[0];
         
         if (citizenId.includes('@') && !citizenId.endsWith('@c.us') && !citizenId.endsWith('@lid')) {
@@ -360,7 +397,6 @@ router.put('/:id/status', async (req, res) => {
           });
         } else if (/^\+?\d+$/.test(cleanCitizenId)) {
           // It's a phone number (WA/SMS)
-          // Pass the FULL citizenId because it might have @lid suffix needed for WA
           console.log(`💬 Sending resolution WhatsApp/SMS to ${citizenId}`);
           notifyCitizen('update', null, citizenId, complaint).catch(err => {
             console.error('❌ Failed to send resolution WhatsApp notification:', err.message);

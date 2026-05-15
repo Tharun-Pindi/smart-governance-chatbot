@@ -1,5 +1,6 @@
 import React from 'react';
 import { Eye, Edit2, MessageCircle, ChevronRight } from 'lucide-react';
+import MediaRenderer from './MediaRenderer';
 
 const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onViewImage, userRole, wardNumber }) => {
   return (
@@ -46,7 +47,7 @@ const RecentComplaintsTable = ({ complaints, onSelectComplaint, onViewAll, onVie
                         onViewImage(c.media_url);
                       }}
                     >
-                      <img src={c.media_url} alt="Media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <MediaRenderer url={c.media_url} alt="Media" thumbnail={true} />
                     </div>
                   ) : (
                     <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>

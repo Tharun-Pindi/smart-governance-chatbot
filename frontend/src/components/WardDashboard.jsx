@@ -7,6 +7,7 @@ import MapsGrid from './MapsGrid';
 import { Eye, Edit2, Download, Upload, Plus, MessageCircle, ChevronRight } from 'lucide-react';
 import ErrorBoundary from './ErrorBoundary';
 import StatsCards from './StatsCards';
+import MediaRenderer from './MediaRenderer';
 
 const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#64748b'];
 
@@ -222,7 +223,7 @@ const WardDashboard = ({ complaints, stats, wardNumber, onSelectComplaint, onVie
                           onViewImage(c.media_url);
                         }}
                       >
-                        <img src={c.media_url} alt="Media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <MediaRenderer url={c.media_url} alt="Media" thumbnail={true} />
                       </div>
                     ) : (
                       <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>

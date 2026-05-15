@@ -80,9 +80,9 @@ const sendSMS = async (to, message) => {
   }
 };
 
-const sendWhatsApp = async (to, message) => {
+const sendWhatsApp = async (to, message, mediaUrl = null) => {
   const { sendWhatsAppMessage } = require('./whatsappService');
-  return sendWhatsAppMessage(to, message);
+  return sendWhatsAppMessage(to, message, mediaUrl);
 };
 
 const sendVoiceAlert = async (to, text) => {
@@ -107,18 +107,33 @@ const sendVoiceAlert = async (to, text) => {
 };
 
 const notifyCitizen = async (type, recipientEmail, recipientPhone, data) => {
-  const message = `SmartGov Update: Your complaint regarding "${data.title}" is now "${data.status}". Dept: ${data.department || 'General'}.\n\nస్మార్ట్ గవర్నెన్స్ అప్‌డేట్: మీ ఫిర్యాదు "${data.title}" ఇప్పుడు "${data.status}" స్థితిలో ఉంది. విభాగం: ${data.department || 'సాధారణం'}.`;
+  let message = `SmartGov Update: Your complaint regarding "${data.title}" is now "${data.status}". Dept: ${data.department || 'General'}.\n\nస్మార్ట్ గవర్నెన్స్ అప్‌డేట్: మీ ఫిర్యాదు "${data.title}" ఇప్పుడు "${data.status}" స్థితిలో ఉంది. విభాగం: ${data.department || 'సాధారణం'}.`;
+  
+  if (data.status === 'Resolved' || data.status === 'Solved') {
+    if (data.resolution_message) {
+      message += `\n\nResolution / పరిష్కారం: ${data.resolution_message}`;
+    }
+    message += `\n\n⭐ Please reply with a number from 1 to 5 to rate our service (5 = Excellent).\nఈ సేవను రేట్ చేయడానికి దయచేసి 1 నుండి 5 వరకు నంబర్‌తో రిప్లై ఇవ్వండి.`;
+  }
   
   console.log(`📢 [NOTIFY] Recipient Email: ${recipientEmail || 'N/A'}, Phone/Chat: ${recipientPhone || 'N/A'}`);
   
   // Send notifications without blocking the main process
   if (recipientEmail) {
-    sendEmail(recipientEmail, `Update: ${data.title}`, message).catch(e => console.error("❌ Email notify error:", e.message));
+    notifyCitizenEmail(recipientEmail, data).catch(e => console.error("❌ Email notify error:", e.message));
   }
   
   if (recipientPhone) {
     // If it's a WhatsApp ID or a phone number, try WhatsApp first
-    sendWhatsApp(recipientPhone, message).catch(e => console.error("❌ WhatsApp notify error:", e.message));
+    const mediaUrl = data.resolution_media_url || null;
+    sendWhatsApp(recipientPhone, message, mediaUrl).catch(e => console.error("❌ WhatsApp notify error:", e.message));
+    
+    if (data.status === 'Resolved' || data.status === 'Solved') {
+        const { setUserRatingState } = require('./whatsappService');
+        if (setUserRatingState) {
+            setUserRatingState(recipientPhone, data.id);
+        }
+    }
     
     // Only try SMS if it's NOT a WhatsApp specific ID
     if (!recipientPhone.includes('@')) {
@@ -129,6 +144,18 @@ const notifyCitizen = async (type, recipientEmail, recipientPhone, data) => {
 
 const notifyCitizenEmail = async (recipientEmail, data) => {
   const subject = `Update: Complaint #${data.id ? data.id.substring(0,8) : 'N/A'} - ${data.status}`;
+  
+  let resolutionHtml = '';
+  if ((data.status === 'Resolved' || data.status === 'Solved') && (data.resolution_message || data.resolution_media_url)) {
+    resolutionHtml = `
+      <div style="background: #eef2ff; padding: 15px; border-radius: 4px; margin: 20px 0; border-left: 4px solid #4f46e5;">
+        <h3 style="color: #3730a3; margin-top: 0;">Resolution Details</h3>
+        ${data.resolution_message ? `<p><strong>Message:</strong> ${data.resolution_message}</p>` : ''}
+        ${data.resolution_media_url ? `<p><strong>Proof:</strong> <a href="${data.resolution_media_url}">View Attachment</a></p>` : ''}
+      </div>
+    `;
+  }
+
   const html = `
     <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
       <h2 style="color: #1e40af;">Smart Governance Portal</h2>
@@ -141,6 +168,7 @@ const notifyCitizenEmail = async (recipientEmail, data) => {
         <p><strong>Department:</strong> ${data.department || 'N/A'}</p>
         <p><strong>Priority:</strong> ${data.priority || 'N/A'}</p>
       </div>
+      ${resolutionHtml}
       <p>You can track further details by logging into your dashboard with your ID.</p>
       <p style="font-size: 0.8rem; color: #64748b; margin-top: 30px;">This is an automated governance alert. Please do not reply to this email.</p>
     </div>

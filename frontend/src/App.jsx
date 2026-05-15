@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import * as XLSX from 'xlsx';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 import StatsCards from './components/StatsCards';
@@ -10,7 +11,7 @@ import SystemLogs from './components/SystemLogs';
 import ErrorBoundary from './components/ErrorBoundary';
 import { 
   Eye, Edit2, Search, Filter, ArrowLeft, X, Trash2, Plus,
-  LayoutDashboard, MessageSquare, Grid, Map as MapIcon, MapPin, Layers, Users, BarChart3, Bell, Settings as SettingsIcon, HelpCircle, CheckCircle2, Calendar, Download 
+  LayoutDashboard, MessageSquare, Grid, Map as MapIcon, MapPin, Layers, Users, BarChart3, Bell, Settings as SettingsIcon, HelpCircle, CheckCircle2, Calendar, Download, Sparkles 
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:5001/api';
@@ -19,6 +20,8 @@ import ComplaintModal from './components/ComplaintModal';
 import Settings from './components/Settings';
 import WardDashboard from './components/WardDashboard';
 import FeedbackHub from './components/FeedbackHub';
+import MediaRenderer from './components/MediaRenderer';
+import VoiceChatbot from './components/VoiceChatbot';
 
 
 const menuItems = [
@@ -33,6 +36,7 @@ const menuItems = [
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
   { id: 'feedback', label: 'Feedback', icon: HelpCircle },
+  { id: 'chatbot', label: 'AI Chatbot', icon: Sparkles },
 ];
 
 const App = () => {
@@ -136,16 +140,22 @@ const App = () => {
     }
   };
 
-  const handleUpdateStatus = async (id, newStatus) => {
+  const handleUpdateStatus = async (id, newStatus, resolutionData = null) => {
     try {
-      await axios.put(`${API_BASE_URL}/complaints/${id}/status`, { status: newStatus });
+      const payload = { status: newStatus };
+      if (resolutionData) {
+        if (resolutionData.message) payload.resolution_message = resolutionData.message;
+        if (resolutionData.mediaUrl) payload.resolution_media_url = resolutionData.mediaUrl;
+      }
+      
+      await axios.put(`${API_BASE_URL}/complaints/${id}/status`, payload);
       fetchComplaints(); // Refresh list
       if (selectedComplaint && selectedComplaint.id === id) {
         setSelectedComplaint({ ...selectedComplaint, status: newStatus });
       }
     } catch (err) {
       console.error('Failed to update status:', err);
-      alert('Failed to update status. Please try again.');
+      alert(err.response?.data?.message || 'Failed to update status. Please try again.');
     }
   };
 
@@ -200,8 +210,9 @@ const App = () => {
     if (!adminName || !phoneNumber) return alert('Please enter your name and phone number');
     setLoginLoading(true);
     try {
-      const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
-      await axios.post(`${API_BASE_URL}/auth/send-otp`, { phone: fullPhone, name: adminName });
+      const rawPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
+      const fullPhone = rawPhone.replace(/\s+/g, '');
+      await axios.post(`${API_BASE_URL}/auth/send-otp`, { phone: fullPhone, name: adminName.trim() });
       setOtpSent(true);
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to send OTP');
@@ -214,8 +225,9 @@ const App = () => {
     if (!otp) return alert('Please enter OTP');
     setLoginLoading(true);
     try {
-      const fullPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
-      const res = await axios.post(`${API_BASE_URL}/auth/verify-otp`, { phone: fullPhone, otp });
+      const rawPhone = phoneNumber.startsWith('+') ? phoneNumber : `${countryCode}${phoneNumber}`;
+      const fullPhone = rawPhone.replace(/\s+/g, '');
+      const res = await axios.post(`${API_BASE_URL}/auth/verify-otp`, { phone: fullPhone, otp: otp.trim() });
       if (res.data.success) {
         const { user } = res.data;
         setUserProfile({
@@ -239,7 +251,19 @@ const App = () => {
   const handleExportData = () => {
     if (filteredComplaints.length === 0) return alert('No data to export');
     
-    // Define CSV headers
+    // Helper to format date
+    const formatExcelDate = (dateStr) => {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'N/A';
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    };
+
+    // Define headers
     const headers = ['ID', 'Date', 'Citizen Name', 'Phone/ID', 'Category', 'Ward', 'Address', 'Status', 'Priority', 'Department', 'Description'];
     
     // Map data to rows
@@ -249,40 +273,53 @@ const App = () => {
       
       return [
         `SG-${String(c.id || '').substring(0, 8).toUpperCase()}`,
-        new Date(c.created_at).toLocaleString().replace(',', ''),
+        formatExcelDate(c.created_at),
         c.citizen_name || 'N/A',
         c.citizen_id || 'Anonymous',
         c.category || 'General',
         wardStr,
-        `"${(c.address || c.location || 'N/A').replace(/"/g, '""')}"`,
+        c.address || c.location || 'N/A',
         c.status || 'Pending',
         c.priority || 'Medium',
         c.department || 'N/A',
-        `"${(c.description || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`
+        (c.description || '').replace(/\n/g, ' ')
       ];
     });
     
-    // Combine into CSV string with Metadata Header
-    const csvContent = [
-      `"Smart Governance System - Administrative Export"`,
-      `"Generated On: ${new Date().toLocaleString()}"`,
-      `"Total Records: ${filteredComplaints.length}"`,
-      `""`, // Spacing line
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
+    // Prepare Workbook Data
+    const fullData = [
+      ["Smart Governance System - Administrative Export"],
+      [`Generated On: ${formatExcelDate(new Date())}`],
+      [`Total Records: ${filteredComplaints.length}`],
+      [], // Spacing line
+      headers,
+      ...rows
+    ];
+
+    // Create Worksheet and Workbook
+    const ws = XLSX.utils.aoa_to_sheet(fullData);
     
-    // Create download link with full timestamp in filename
-    const timestamp = new Date().toLocaleString().replace(/[/, :]/g, '-').replace('--', '_');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `SmartGov_FullReport_${timestamp}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // Set explicit column widths so dates are visible immediately
+    ws['!cols'] = [
+      { wch: 15 }, // ID
+      { wch: 22 }, // Date
+      { wch: 20 }, // Citizen Name
+      { wch: 15 }, // Phone/ID
+      { wch: 15 }, // Category
+      { wch: 15 }, // Ward
+      { wch: 45 }, // Address
+      { wch: 12 }, // Status
+      { wch: 12 }, // Priority
+      { wch: 20 }, // Department
+      { wch: 60 }  // Description
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Full Report");
+
+    // Generate filename and Trigger Download
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    XLSX.writeFile(wb, `SmartGov_FullReport_${timestamp}.xlsx`);
   };
 
   if (isLoading) {
@@ -398,7 +435,7 @@ const App = () => {
 
   return (
     <div className="dashboard-layout">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole={userRole} wardNumber={wardNumber} />
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} userRole={userRole} wardNumber={wardNumber} complaints={complaints} />
       
       <main className="main-content">
         <TopHeader 
@@ -452,6 +489,8 @@ const App = () => {
             </div>
           )
         )}
+
+
 
         {activeTab === 'complaints' && (
           <div className="card animate-fade-in" style={{ marginTop: '1rem' }}>
@@ -528,7 +567,7 @@ const App = () => {
                                       setFullscreenImage(c.media_url);
                                     }}
                                   >
-                                    <img src={c.media_url} alt="Media" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    <MediaRenderer url={c.media_url} alt="Media" thumbnail={true} />
                                   </div>
                                 ) : (
                                   <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
@@ -610,18 +649,28 @@ const App = () => {
           >
             <X size={32} />
           </div>
-          <img 
-            src={fullscreenImage} 
-            alt="Full Screen" 
+          <div 
             style={{ 
+              position: 'relative',
               maxWidth: '90%', 
               maxHeight: '90%', 
-              objectFit: 'contain', 
               borderRadius: '8px',
-              boxShadow: '0 0 30px rgba(0,0,0,0.5)'
+              boxShadow: '0 0 30px rgba(0,0,0,0.5)',
+              background: '#000',
+              overflow: 'hidden'
             }} 
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <MediaRenderer 
+              url={fullscreenImage} 
+              alt="Full Screen" 
+              style={{ 
+                maxWidth: '100%', 
+                maxHeight: '80vh', 
+                objectFit: 'contain'
+              }} 
+            />
+          </div>
         </div>
       )}
 
@@ -660,30 +709,37 @@ const App = () => {
           <div className="animate-fade-in" style={{ padding: '1rem' }}>
             <div className="flex justify-between items-center mb-6">
                <div>
-                  <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Geospatial Map View</h2>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Real-time distribution of reported issues across the city</p>
-               </div>
-               <div className="flex gap-2">
-                  <div className="date-picker">
-                     <Filter size={16} />
-                     <span>Filter by Ward</span>
-                  </div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Live Complaints Map</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Real-time distribution of reported issues across the city.</p>
                </div>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} selectedComplaint={selectedComplaint} view="live" userRole={userRole} wardNumber={wardNumber} />
+            <MapsGrid 
+              complaints={filteredComplaints} 
+              onSelectComplaint={setSelectedComplaint} 
+              selectedComplaint={selectedComplaint} 
+              view="live" 
+              userRole={userRole} 
+              wardNumber={wardNumber} 
+            />
           </div>
         )}
 
         {activeTab === 'heatmap' && (
           <div className="animate-fade-in" style={{ padding: '1rem' }}>
-            <div style={{ textAlign: 'center', marginBottom: '2.5rem', background: 'white', padding: '2rem', borderRadius: '1.5rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-               <div className="avatar" style={{ margin: '0 auto 1rem', width: 64, height: 64, background: 'var(--primary-light)' }}>
-                  <MapIcon size={32} color="var(--primary)" />
+            <div className="flex justify-between items-center mb-6">
+               <div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Complaint Heatmap</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Analyzing location density hotspots.</p>
                </div>
-               <h2 style={{ fontSize: '1.875rem', fontWeight: 800, letterSpacing: '-0.025em' }}>Location Density Heatmap</h2>
-               <p style={{ color: 'var(--text-muted)', maxWidth: '600px', margin: '0.5rem auto 0' }}>Analyzing clustering of reports in real-time to identify high-priority intervention zones.</p>
             </div>
-            <MapsGrid complaints={filteredComplaints} onSelectComplaint={setSelectedComplaint} selectedComplaint={selectedComplaint} view="heatmap" userRole={userRole} wardNumber={wardNumber} />
+            <MapsGrid 
+              complaints={filteredComplaints} 
+              onSelectComplaint={setSelectedComplaint} 
+              selectedComplaint={selectedComplaint} 
+              view="heatmap" 
+              userRole={userRole} 
+              wardNumber={wardNumber} 
+            />
           </div>
         )}
 
@@ -901,6 +957,12 @@ const App = () => {
             wardNumber={wardNumber}
             onViewImage={setFullscreenImage}
           />
+        )}
+
+        {activeTab === 'chatbot' && (
+          <div className="animate-fade-in" style={{ padding: '1rem', height: 'calc(100vh - 120px)' }}>
+             <VoiceChatbot />
+          </div>
         )}
 
         {activeTab === 'settings' && (

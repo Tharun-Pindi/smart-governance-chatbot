@@ -49,7 +49,7 @@ const TopHeader = ({ userRole = 'super_admin', wardNumber = '5', setWardNumber, 
               }}
             >
               <option value="">🌍 All Wards</option>
-              {[...Array(10)].map((_, i) => (
+              {[...Array(50)].map((_, i) => (
                 <option key={i+1} value={String(i+1)}>📍 Ward {i+1}</option>
               ))}
             </select>

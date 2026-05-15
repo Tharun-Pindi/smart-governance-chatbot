@@ -29,6 +29,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/complaints', require('./routes/complaints'));
 app.use('/api/broadcast', require('./routes/broadcast'));
 app.use('/api/webhooks', require('./routes/webhooks'));
+app.use('/api/chat', require('./routes/chat'));
 
 // --- Real-time System Logs (SSE) ---
 app.get('/api/logs/stream', (req, res) => {
@@ -89,6 +90,34 @@ app.get('/api/whatsapp/status', (req, res) => {
 app.post('/api/whatsapp/reset', async (req, res) => {
   await resetWhatsAppBot();
   res.json({ message: 'WhatsApp session reset initiated' });
+});
+
+app.post('/api/whatsapp/test', async (req, res) => {
+  const { to, message } = req.body;
+  try {
+    const { sendWhatsAppMessage, client } = require('./services/whatsappService');
+    
+    // Test LID resolution
+    let target = to;
+    let isRegistered = false;
+    if (to.includes('@lid')) {
+       try {
+         const contact = await client.getContactById(to);
+         if (contact && contact.number) {
+            target = `${contact.number}@c.us`;
+            isRegistered = await client.isRegisteredUser(target);
+         }
+       } catch (e) {
+         console.error('LID resolve error:', e);
+       }
+    } else {
+       isRegistered = await client.isRegisteredUser(target);
+    }
+    
+    res.json({ success: true, target, isRegistered });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/whatsapp/qr', (req, res) => {
